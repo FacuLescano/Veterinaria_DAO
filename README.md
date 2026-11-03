@@ -353,6 +353,22 @@ Se deberá preservar el historial de estados de las muestras para permitir su se
 
 ## 12. Estado del proyecto
 
-El proyecto se encuentra en etapa de preparación de la estructura del repositorio y configuración inicial del backend. Los módulos funcionales, el esquema definitivo de base de datos, los endpoints y la interfaz de usuario se implementarán progresivamente.
+El backend incluye el módulo 1 de pacientes y atención veterinaria. Los módulos de órdenes y muestras, despacho, recepción y resultados, además de la interfaz de usuario, quedan para las siguientes etapas.
 
 Este README se actualizará conforme se incorporen nuevas funcionalidades, configuraciones y procedimientos de instalación.
+
+## Módulo 1: pacientes y atención veterinaria
+
+El backend expone el primer módulo bajo `/api/v1` y crea las tablas SQLite al iniciar. Por defecto, la base queda en `vet_back/data/veterinaria.db`; se puede cambiar con `DATABASE_PATH` o configurar otra conexión mediante `DATABASE_URL`.
+
+Rutas principales:
+
+- `POST/GET/PATCH /api/v1/responsables`: alta, búsqueda, consulta y actualización. El documento es único.
+- `POST/GET/PATCH /api/v1/veterinarios`: alta, consulta y activación o desactivación de profesionales.
+- `POST/GET/PATCH /api/v1/mascotas`: mascotas vinculadas a un responsable; permite filtro por responsable y búsqueda por nombre.
+- `GET /api/v1/mascotas/{id}/responsables-historicos`: historial de responsables asociados.
+- `POST/GET/PATCH /api/v1/turnos`, `PATCH /api/v1/turnos/{id}/estado`: agenda, reprogramación y cambios de estado. Se rechazan superposiciones para un profesional y se mantiene historial en `/api/v1/turnos/{id}/historial`.
+- `POST/GET /api/v1/consultas`: consultas con o sin turno.
+- `GET /api/v1/mascotas/{id}/historia-clinica`: consultas históricas del paciente.
+
+La API valida relaciones e identificadores y devuelve `404` para entidades inexistentes y `409` para duplicados o conflictos de agenda. Los contratos completos están disponibles en `/docs`. Esta entrega cubre la API; la tecnología de `vet_front` aún está pendiente de definición.
