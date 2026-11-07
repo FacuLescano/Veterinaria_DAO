@@ -118,3 +118,91 @@ def test_us07_transicion_estado_invalida(client, datos_prueba):
     )
     assert res_bad.status_code == 409
     assert "Transición no permitida" in res_bad.json()["detail"]
+
+
+# ==============================================================================
+# Pruebas para US-08: Registrar extracción de muestra
+# ==============================================================================
+
+def test_us08_registrar_extraccion_muestra_exitosa(client, datos_prueba):
+    """US-08: Registrar la extracción de una muestra con su etiqueta física, responsable y condiciones."""
+    # 1. Crear una orden de análisis previa
+    res_orden = client.post(
+        "/api/v1/ordenes-analisis",
+        json={
+            "consulta_id": datos_prueba["consulta_id"],
+            "detalles": [{"tipo_analisis_id": datos_prueba["tipo_analisis_id"]}],
+        },
+    )
+    orden_id = res_orden.json()["id"]
+
+    # 2. Registrar la extracción de la muestra
+    cuerpo_muestra = {
+        "codigo_etiqueta": "MUESTRA-2026-001",
+        "orden_id": orden_id,
+        "tipo_muestra_id": datos_prueba["tipo_muestra_id"],
+        "responsable_extraccion": "Dra. Lopez",
+        "observaciones_calidad": "Muestra clara, sin hemólisis",
+    }
+    res_muestra = client.post("/api/v1/muestras", json=cuerpo_muestra)
+    assert res_muestra.status_code == 201
+
+    muestra = res_muestra.json()
+    assert muestra["id"] is not None
+    assert muestra["codigo_etiqueta"] == "MUESTRA-2026-001"
+    assert muestra["orden_id"] == orden_id
+    assert muestra["estado"] == "extraida"
+    # Condiciones por defecto heredadas del tipo de muestra
+    assert muestra["condiciones_conservacion"] == "Refrigerar a 4°C"
+    assert muestra["tipo_muestra"]["nombre"] == "Sangre con EDTA"
+    assert len(muestra["historial"]) == 1
+    assert muestra["historial"][0]["estado_nuevo"] == "extraida"
+
+    # 3. Consultar las muestras vinculadas a la orden
+    res_list = client.get(f"/api/v1/ordenes-analisis/{orden_id}/muestras")
+    assert res_list.status_code == 200
+    muestras_orden = res_list.json()
+    assert len(muestras_orden) == 1
+    assert muestras_orden[0]["codigo_etiqueta"] == "MUESTRA-2026-001"
+
+
+def test_us08_muestra_codigo_duplicado_rechazado(client, datos_prueba):
+    """US-08: El código de etiqueta física debe ser único (no duplicado)."""
+    res_orden = client.post(
+        "/api/v1/ordenes-analisis",
+        json={
+            "consulta_id": datos_prueba["consulta_id"],
+            "detalles": [{"tipo_analisis_id": datos_prueba["tipo_analisis_id"]}],
+        },
+    )
+    orden_id = res_orden.json()["id"]
+
+    cuerpo = {
+        "codigo_etiqueta": "TUBO-REPETIDO",
+        "orden_id": orden_id,
+        "tipo_muestra_id": datos_prueba["tipo_muestra_id"],
+        "responsable_extraccion": "Enfermero Juan",
+    }
+
+    # Primera vez: exitoso
+    res1 = client.post("/api/v1/muestras", json=cuerpo)
+    assert res1.status_code == 201
+
+    # Segunda vez: conflicto por código duplicado
+    res2 = client.post("/api/v1/muestras", json=cuerpo)
+    assert res2.status_code == 409
+    assert "Ya existe una muestra registrada con el código de etiqueta" in res2.json()["detail"]
+
+
+def test_us08_muestra_orden_inexistente(client, datos_prueba):
+    """US-08: No se puede registrar muestra para una orden que no existe."""
+    cuerpo = {
+        "codigo_etiqueta": "TUBO-INEXISTENTE",
+        "orden_id": 99999,
+        "tipo_muestra_id": datos_prueba["tipo_muestra_id"],
+        "responsable_extraccion": "Dra. Lopez",
+    }
+    res = client.post("/api/v1/muestras", json=cuerpo)
+    assert res.status_code == 404
+    assert "Orden de análisis" in res.json()["detail"]
+

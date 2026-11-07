@@ -1,19 +1,26 @@
+from datetime import datetime, timezone
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.dao.muestra_dao import MuestraDAO, TipoMuestraDAO
 from app.dao.orden_analisis_dao import OrdenAnalisisDAO
 from app.dao.tipo_analisis_dao import TipoAnalisisDAO
 from app.models.orden_analisis import (
     DetalleOrdenAnalisis,
+    HistorialMuestra,
     HistorialOrdenAnalisis,
+    Muestra,
     OrdenAnalisis,
     TipoAnalisis,
+    TipoMuestra,
 )
 from app.models.patient import Consultation, Veterinarian
 from app.schemas.orden_analisis import (
+    MuestraCreate,
     OrdenEstadoUpdate,
     SolicitudAnalisisCreate,
     TipoAnalisisCreate,
+    TipoMuestraCreate,
 )
 
 ESTADOS_VALIDOS_ORDEN = {
@@ -39,6 +46,8 @@ class OrdenAnalisisService:
         self.db = db
         self.orden_dao = OrdenAnalisisDAO(db)
         self.tipo_analisis_dao = TipoAnalisisDAO(db)
+        self.muestra_dao = MuestraDAO(db)
+        self.tipo_muestra_dao = TipoMuestraDAO(db)
 
     # --- Gestión de Tipos de Análisis (Catálogo) ---
 
@@ -216,3 +225,118 @@ class OrdenAnalisisService:
         if consulta_id is not None:
             return self.orden_dao.list_by_consulta_id(consulta_id)
         return self.orden_dao.list_all()
+
+    # --- Gestión de Tipos de Muestra ---
+
+    def crear_tipo_muestra(self, payload: TipoMuestraCreate) -> TipoMuestra:
+        existente = self.tipo_muestra_dao.get_by_nombre(payload.nombre)
+        if existente:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Ya existe un tipo de muestra con el nombre '{payload.nombre}'",
+            )
+        tipo = TipoMuestra(
+            nombre=payload.nombre.strip(),
+            descripcion=payload.descripcion.strip() if payload.descripcion else None,
+            condiciones_conservacion_default=(
+                payload.condiciones_conservacion_default.strip()
+                if payload.condiciones_conservacion_default
+                else None
+            ),
+            activo=True,
+        )
+        self.tipo_muestra_dao.create(tipo)
+        self.db.commit()
+        self.db.refresh(tipo)
+        return tipo
+
+    def listar_tipos_muestra(self, only_active: bool = True) -> list[TipoMuestra]:
+        return self.tipo_muestra_dao.list_all(only_active=only_active)
+
+    # --- Extracción de Muestras Biológicas ---
+
+    def registrar_extraccion_muestra(self, payload: MuestraCreate) -> Muestra:
+        """
+        Registra la obtención de una muestra biológica vinculada a una orden existente.
+        Valida unicidad de código de etiqueta, existencia del tipo de muestra y genera
+        el evento inicial de trazabilidad en el historial de la muestra.
+        """
+        # 1. Validar que la orden exista y no esté cancelada
+        orden = self.obtener_orden_por_id(payload.orden_id)
+        if orden.estado == "cancelada":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No se pueden registrar muestras para una orden cancelada",
+            )
+
+        # 2. Validar que el código de etiqueta no esté repetido
+        codigo_limpio = payload.codigo_etiqueta.strip()
+        muestra_existente = self.muestra_dao.get_by_codigo_etiqueta(codigo_limpio)
+        if muestra_existente:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Ya existe una muestra registrada con el código de etiqueta '{codigo_limpio}'",
+            )
+
+        # 3. Validar tipo de muestra
+        tipo_muestra = self.tipo_muestra_dao.get_by_id(payload.tipo_muestra_id)
+        if not tipo_muestra:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"El tipo de muestra con ID {payload.tipo_muestra_id} no existe",
+            )
+        if not tipo_muestra.activo:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"El tipo de muestra '{tipo_muestra.nombre}' no se encuentra disponible",
+            )
+
+        # 4. Determinar condiciones de conservación (específica o por defecto del tipo)
+        condiciones = (
+            payload.condiciones_conservacion.strip()
+            if payload.condiciones_conservacion
+            else (tipo_muestra.condiciones_conservacion_default or "Estándar a temperatura ambiente")
+        )
+
+        fecha_extraccion = payload.fecha_extraccion or datetime.now(timezone.utc)
+
+        # 5. Instanciar y persistir la muestra en estado 'extraida'
+        muestra = Muestra(
+            codigo_etiqueta=codigo_limpio,
+            orden_id=orden.id,
+            tipo_muestra_id=tipo_muestra.id,
+            responsable_extraccion=payload.responsable_extraccion.strip(),
+            condiciones_conservacion=condiciones,
+            observaciones_calidad=payload.observaciones_calidad.strip() if payload.observaciones_calidad else None,
+            fecha_extraccion=fecha_extraccion,
+            estado="extraida",
+        )
+        self.muestra_dao.create(muestra)
+
+        # 6. Registrar evento inicial en el historial de la muestra
+        evento_historial = HistorialMuestra(
+            muestra_id=muestra.id,
+            estado_anterior=None,
+            estado_nuevo="extraida",
+            motivo="Extracción de muestra registrada",
+            responsable=payload.responsable_extraccion.strip(),
+        )
+        self.muestra_dao.add_historial(evento_historial)
+
+        self.db.commit()
+        return self.obtener_muestra_por_id(muestra.id)
+
+    def obtener_muestra_por_id(self, muestra_id: int) -> Muestra:
+        muestra = self.muestra_dao.get_by_id(muestra_id)
+        if not muestra:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Muestra biológica con ID {muestra_id} no encontrada",
+            )
+        return muestra
+
+    def listar_muestras_por_orden(self, orden_id: int) -> list[Muestra]:
+        # Validar existencia de orden
+        self.obtener_orden_por_id(orden_id)
+        return self.muestra_dao.list_by_orden_id(orden_id)
+

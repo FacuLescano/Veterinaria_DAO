@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.db.session import Base, get_db
 from app.main import app
-from app.models.orden_analisis import TipoAnalisis
+from app.models.orden_analisis import TipoAnalisis, TipoMuestra
 from app.models.patient import Consultation, Pet, Responsible, Veterinarian
 
 # Base de datos en memoria para no modificar veterinaria.db
@@ -91,12 +91,21 @@ def datos_prueba():
             activo=True,
         )
         db.add(tipo)
+
+        tipo_muestra = TipoMuestra(
+            nombre="Sangre con EDTA",
+            descripcion="Tubo con anticoagulante EDTA",
+            condiciones_conservacion_default="Refrigerar a 4°C",
+            activo=True,
+        )
+        db.add(tipo_muestra)
         db.commit()
 
         return {
             "consulta_id": consulta.id,
             "veterinario_id": vet.id,
             "tipo_analisis_id": tipo.id,
+            "tipo_muestra_id": tipo_muestra.id,
         }
     finally:
         db.close()

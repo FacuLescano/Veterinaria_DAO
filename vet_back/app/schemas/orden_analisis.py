@@ -81,3 +81,78 @@ class OrdenAnalisisRead(BaseModel):
     detalles: list[DetalleOrdenAnalisisRead] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# --- Schemas para Muestras Biológicas ---
+
+class TipoMuestraBase(BaseModel):
+    nombre: str = Field(..., max_length=120, description="Nombre del tipo de material biológico (ej: Sangre con EDTA, Orina)")
+    descripcion: str | None = Field(default=None, description="Descripción del tipo de muestra")
+    condiciones_conservacion_default: str | None = Field(
+        default=None, max_length=200, description="Condiciones predeterminadas de conservación (ej: Refrigerar a 4°C)"
+    )
+
+
+class TipoMuestraCreate(TipoMuestraBase):
+    pass
+
+
+class TipoMuestraRead(TipoMuestraBase):
+    id: int
+    activo: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class HistorialMuestraRead(BaseModel):
+    id: int
+    muestra_id: int
+    estado_anterior: str | None
+    estado_nuevo: str
+    changed_at: datetime
+    motivo: str | None = None
+    responsable: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MuestraCreate(BaseModel):
+    codigo_etiqueta: str = Field(
+        ...,
+        min_length=1,
+        max_length=60,
+        description="Identificación física única o código de barra/etiqueta del contenedor",
+    )
+    orden_id: int = Field(..., description="ID de la orden de análisis a la que pertenece la muestra")
+    tipo_muestra_id: int = Field(..., description="ID del tipo de material biológico")
+    responsable_extraccion: str = Field(
+        ..., min_length=1, max_length=160, description="Profesional o personal autorizado que realizó la extracción"
+    )
+    condiciones_conservacion: str | None = Field(
+        default=None,
+        max_length=200,
+        description="Condiciones de conservación requeridas (si no se especifica, usa el valor por defecto del tipo de muestra)",
+    )
+    observaciones_calidad: str | None = Field(
+        default=None, description="Observaciones iniciales sobre el estado o calidad de la muestra (ej: Hemolizada, Turbia)"
+    )
+    fecha_extraccion: datetime | None = Field(
+        default=None, description="Fecha y hora de extracción (por defecto momento actual)"
+    )
+
+
+class MuestraRead(BaseModel):
+    id: int
+    codigo_etiqueta: str
+    orden_id: int
+    tipo_muestra_id: int
+    fecha_extraccion: datetime
+    responsable_extraccion: str
+    condiciones_conservacion: str
+    observaciones_calidad: str | None
+    estado: str
+    tipo_muestra: TipoMuestraRead | None = None
+    historial: list[HistorialMuestraRead] = []
+
+    model_config = ConfigDict(from_attributes=True)
+

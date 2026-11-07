@@ -4,11 +4,15 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.schemas.orden_analisis import (
     HistorialOrdenAnalisisRead,
+    MuestraCreate,
+    MuestraRead,
     OrdenAnalisisRead,
     OrdenEstadoUpdate,
     SolicitudAnalisisCreate,
     TipoAnalisisCreate,
     TipoAnalisisRead,
+    TipoMuestraCreate,
+    TipoMuestraRead,
 )
 from app.services.orden_analisis_service import OrdenAnalisisService
 
@@ -135,3 +139,70 @@ def list_analisis_by_consulta(
     service: OrdenAnalisisService = Depends(get_service),
 ):
     return service.listar_ordenes(consulta_id=consulta_id)
+
+
+# --- Tipos de Muestra ---
+
+@router.post(
+    "/tipos-muestra",
+    response_model=TipoMuestraRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar un tipo de material biológico en el catálogo",
+)
+def create_tipo_muestra(
+    payload: TipoMuestraCreate,
+    service: OrdenAnalisisService = Depends(get_service),
+):
+    return service.crear_tipo_muestra(payload)
+
+
+@router.get(
+    "/tipos-muestra",
+    response_model=list[TipoMuestraRead],
+    summary="Listar tipos de muestra disponibles",
+)
+def list_tipos_muestra(
+    only_active: bool = Query(default=True, description="Filtrar solo los tipos activos"),
+    service: OrdenAnalisisService = Depends(get_service),
+):
+    return service.listar_tipos_muestra(only_active=only_active)
+
+
+# --- Muestras Biológicas ---
+
+@router.post(
+    "/muestras",
+    response_model=MuestraRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="US-08: Registrar la extracción de una muestra biológica vinculada a una orden",
+)
+def registrar_extraccion_muestra(
+    payload: MuestraCreate,
+    service: OrdenAnalisisService = Depends(get_service),
+):
+    return service.registrar_extraccion_muestra(payload)
+
+
+@router.get(
+    "/muestras/{muestra_id}",
+    response_model=MuestraRead,
+    summary="US-08: Obtener el detalle y trazabilidad de una muestra biológica",
+)
+def get_muestra(
+    muestra_id: int,
+    service: OrdenAnalisisService = Depends(get_service),
+):
+    return service.obtener_muestra_por_id(muestra_id)
+
+
+@router.get(
+    "/ordenes-analisis/{orden_id}/muestras",
+    response_model=list[MuestraRead],
+    summary="US-08: Listar todas las muestras biológicas vinculadas a una orden de análisis",
+)
+def list_muestras_por_orden(
+    orden_id: int,
+    service: OrdenAnalisisService = Depends(get_service),
+):
+    return service.listar_muestras_por_orden(orden_id)
+
