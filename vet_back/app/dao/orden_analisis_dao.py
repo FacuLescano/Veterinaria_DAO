@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.models.orden_analisis import (
     DetalleOrdenAnalisis,
     HistorialOrdenAnalisis,
+    Muestra,
     OrdenAnalisis,
 )
 from app.models.patient import Consultation
@@ -18,6 +19,9 @@ class OrdenAnalisisDAO:
     def _default_options(self):
         return [
             selectinload(OrdenAnalisis.detalles).selectinload(DetalleOrdenAnalisis.tipo_analisis),
+            selectinload(OrdenAnalisis.detalles).selectinload(DetalleOrdenAnalisis.asociaciones_muestras),
+            selectinload(OrdenAnalisis.muestras).selectinload(Muestra.tipo_muestra),
+            selectinload(OrdenAnalisis.muestras).selectinload(Muestra.historial),
             selectinload(OrdenAnalisis.consulta).selectinload(Consultation.pet),
             selectinload(OrdenAnalisis.veterinario),
             selectinload(OrdenAnalisis.historial),
@@ -28,6 +32,17 @@ class OrdenAnalisisDAO:
             select(OrdenAnalisis)
             .where(OrdenAnalisis.id == orden_id)
             .options(*self._default_options())
+        )
+        return self.db.scalars(query).first()
+
+    def get_detalle_by_id(self, detalle_id: int) -> DetalleOrdenAnalisis | None:
+        query = (
+            select(DetalleOrdenAnalisis)
+            .where(DetalleOrdenAnalisis.id == detalle_id)
+            .options(
+                selectinload(DetalleOrdenAnalisis.tipo_analisis),
+                selectinload(DetalleOrdenAnalisis.asociaciones_muestras),
+            )
         )
         return self.db.scalars(query).first()
 

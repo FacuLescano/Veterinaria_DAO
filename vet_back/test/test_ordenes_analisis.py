@@ -206,3 +206,170 @@ def test_us08_muestra_orden_inexistente(client, datos_prueba):
     assert res.status_code == 404
     assert "Orden de análisis" in res.json()["detail"]
 
+
+# ==============================================================================
+# Pruebas para US-09: Asociar muestras con análisis
+# ==============================================================================
+
+def test_us09_asociar_muestra_a_multiples_analisis(client, datos_prueba):
+    """US-09: Una misma muestra puede satisfacer múltiples análisis de la orden si es compatible."""
+    # 1. Crear un segundo tipo de análisis
+    res_tipo2 = client.post(
+        "/api/v1/tipos-analisis",
+        json={"nombre": "Perfil Bioquimico", "descripcion": "Glucosa, Urea, Creatinina"},
+    )
+    tipo2_id = res_tipo2.json()["id"]
+
+    # 2. Crear orden con 2 análisis solicitados
+    res_orden = client.post(
+        "/api/v1/ordenes-analisis",
+        json={
+            "consulta_id": datos_prueba["consulta_id"],
+            "detalles": [
+                {"tipo_analisis_id": datos_prueba["tipo_analisis_id"]},
+                {"tipo_analisis_id": tipo2_id},
+            ],
+        },
+    )
+    orden = res_orden.json()
+    orden_id = orden["id"]
+    detalles = orden["detalles"]
+    assert len(detalles) == 2
+
+    # 3. Registrar una sola muestra de sangre
+    res_muestra = client.post(
+        "/api/v1/muestras",
+        json={
+            "codigo_etiqueta": "TUBO-MULTI-01",
+            "orden_id": orden_id,
+            "tipo_muestra_id": datos_prueba["tipo_muestra_id"],
+            "responsable_extraccion": "Dra. Lopez",
+        },
+    )
+    muestra_id = res_muestra.json()["id"]
+
+    # 4. Asociar la misma muestra a ambos análisis de la orden
+    res_asoc = client.post(
+        f"/api/v1/ordenes-analisis/{orden_id}/asociar-muestra",
+        json={
+            "muestra_id": muestra_id,
+            "detalle_ids": [detalles[0]["id"], detalles[1]["id"]],
+            "observaciones": "Muestra suficiente para hemograma y bioquímica",
+        },
+    )
+    assert res_asoc.status_code == 200
+    datos_asoc = res_asoc.json()
+    assert len(datos_asoc["detalles_asociados"]) == 2
+
+    # 5. Comprobar que no quedan análisis pendientes de muestra en esta orden
+    res_pendientes = client.get(f"/api/v1/ordenes-analisis/{orden_id}/analisis-pendientes")
+    assert res_pendientes.status_code == 200
+    assert len(res_pendientes.json()) == 0
+
+
+def test_us09_validar_incompatibilidad_tipo_muestra(client, datos_prueba):
+    """US-09: No permite asociar una muestra biológica incompatible con el análisis solicitado."""
+    # 1. Configurar que el tipo de análisis (Hemograma) solo acepta Sangre con EDTA
+    res_compat = client.post(
+        f"/api/v1/tipos-analisis/{datos_prueba['tipo_analisis_id']}/compatibilidad",
+        json={"tipos_muestra_ids": [datos_prueba["tipo_muestra_id"]]},
+    )
+    assert res_compat.status_code == 200
+
+    # 2. Registrar un tipo de muestra diferente (Orina)
+    res_tipo_orina = client.post(
+        "/api/v1/tipos-muestra",
+        json={"nombre": "Muestra de Orina", "descripcion": "Frasco estéril de orina"},
+    )
+    tipo_orina_id = res_tipo_orina.json()["id"]
+
+    # 3. Crear orden con Hemograma
+    res_orden = client.post(
+        "/api/v1/ordenes-analisis",
+        json={
+            "consulta_id": datos_prueba["consulta_id"],
+            "detalles": [{"tipo_analisis_id": datos_prueba["tipo_analisis_id"]}],
+        },
+    )
+    orden_id = res_orden.json()["id"]
+    detalle_id = res_orden.json()["detalles"][0]["id"]
+
+    # 4. Registrar muestra de orina en la orden
+    res_muestra_orina = client.post(
+        "/api/v1/muestras",
+        json={
+            "codigo_etiqueta": "FRASCO-ORINA-01",
+            "orden_id": orden_id,
+            "tipo_muestra_id": tipo_orina_id,
+            "responsable_extraccion": "Enfermero Juan",
+        },
+    )
+    muestra_orina_id = res_muestra_orina.json()["id"]
+
+    # 5. Intentar asociar la muestra de orina con el Hemograma -> debe ser rechazada (400)
+    res_invalida = client.post(
+        f"/api/v1/ordenes-analisis/{orden_id}/asociar-muestra",
+        json={
+            "muestra_id": muestra_orina_id,
+            "detalle_ids": [detalle_id],
+        },
+    )
+    assert res_invalida.status_code == 400
+    assert "Incompatibilidad biológica" in res_invalida.json()["detail"]
+
+
+def test_us09_identificar_analisis_pendientes_de_muestra(client, datos_prueba):
+    """US-09: Identificar con precisión los análisis que aún no tienen una muestra asociada."""
+    # 1. Crear segundo tipo de análisis
+    res_tipo2 = client.post(
+        "/api/v1/tipos-analisis",
+        json={"nombre": "Urocultivo", "descripcion": "Cultivo bacteriológico de orina"},
+    )
+    tipo2_id = res_tipo2.json()["id"]
+
+    # 2. Crear orden con 2 análisis
+    res_orden = client.post(
+        "/api/v1/ordenes-analisis",
+        json={
+            "consulta_id": datos_prueba["consulta_id"],
+            "detalles": [
+                {"tipo_analisis_id": datos_prueba["tipo_analisis_id"]},
+                {"tipo_analisis_id": tipo2_id},
+            ],
+        },
+    )
+    orden = res_orden.json()
+    orden_id = orden["id"]
+    detalles = orden["detalles"]
+
+    # Al inicio, ambos análisis están pendientes
+    res_pendientes_ini = client.get(f"/api/v1/ordenes-analisis/{orden_id}/analisis-pendientes")
+    assert len(res_pendientes_ini.json()) == 2
+
+    # 3. Registrar muestra y asociar SOLO al primer análisis
+    res_muestra = client.post(
+        "/api/v1/muestras",
+        json={
+            "codigo_etiqueta": "TUBO-SOLO-UNO",
+            "orden_id": orden_id,
+            "tipo_muestra_id": datos_prueba["tipo_muestra_id"],
+            "responsable_extraccion": "Dra. Lopez",
+        },
+    )
+    client.post(
+        f"/api/v1/ordenes-analisis/{orden_id}/asociar-muestra",
+        json={
+            "muestra_id": res_muestra.json()["id"],
+            "detalle_ids": [detalles[0]["id"]],
+        },
+    )
+
+    # 4. Verificar que ahora solo queda 1 pendiente (el segundo análisis)
+    res_pendientes_fin = client.get(f"/api/v1/ordenes-analisis/{orden_id}/analisis-pendientes")
+    assert res_pendientes_fin.status_code == 200
+    pendientes = res_pendientes_fin.json()
+    assert len(pendientes) == 1
+    assert pendientes[0]["id"] == detalles[1]["id"]
+    assert pendientes[0]["tipo_analisis"]["nombre"] == "Urocultivo"
+
+

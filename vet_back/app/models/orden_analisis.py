@@ -1,10 +1,19 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Table, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
 from app.models.patient import Consultation, Veterinarian
+
+
+# Tabla asociativa para definir tipos de muestra compatibles con cada tipo de análisis (US-09)
+tipo_analisis_tipos_muestra = Table(
+    "tipo_analisis_tipos_muestra",
+    Base.metadata,
+    Column("tipo_analisis_id", Integer, ForeignKey("tipos_analisis.id"), primary_key=True),
+    Column("tipo_muestra_id", Integer, ForeignKey("tipos_muestra.id"), primary_key=True),
+)
 
 
 class TipoAnalisis(Base):
@@ -16,6 +25,10 @@ class TipoAnalisis(Base):
     activo: Mapped[bool] = mapped_column(default=True)
 
     detalles: Mapped[list["DetalleOrdenAnalisis"]] = relationship(back_populates="tipo_analisis")
+    tipos_muestra_compatibles: Mapped[list["TipoMuestra"]] = relationship(
+        secondary=tipo_analisis_tipos_muestra,
+        lazy="selectin",
+    )
 
 
 class OrdenAnalisis(Base):
@@ -68,6 +81,13 @@ class DetalleOrdenAnalisis(Base):
 
     orden: Mapped[OrdenAnalisis] = relationship(back_populates="detalles")
     tipo_analisis: Mapped[TipoAnalisis] = relationship(back_populates="detalles")
+    asociaciones_muestras: Mapped[list["AsociacionDetalleMuestra"]] = relationship(
+        back_populates="detalle", cascade="all, delete-orphan"
+    )
+
+    @property
+    def tiene_muestra(self) -> bool:
+        return len(self.asociaciones_muestras) > 0
 
 
 class HistorialOrdenAnalisis(Base):
@@ -119,6 +139,9 @@ class Muestra(Base):
     historial: Mapped[list["HistorialMuestra"]] = relationship(
         back_populates="muestra", cascade="all, delete-orphan", order_by="HistorialMuestra.changed_at"
     )
+    asociaciones_detalles: Mapped[list["AsociacionDetalleMuestra"]] = relationship(
+        back_populates="muestra", cascade="all, delete-orphan"
+    )
 
 
 class HistorialMuestra(Base):
@@ -135,3 +158,25 @@ class HistorialMuestra(Base):
     responsable: Mapped[str | None] = mapped_column(String(160), nullable=True)
 
     muestra: Mapped[Muestra] = relationship(back_populates="historial")
+
+
+# --- Entidad Asociativa Muchos-a-Muchos: Muestras y Análisis ---
+
+class AsociacionDetalleMuestra(Base):
+    __tablename__ = "asociaciones_detalle_muestra"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    detalle_id: Mapped[int] = mapped_column(ForeignKey("detalles_orden_analisis.id"), index=True)
+    muestra_id: Mapped[int] = mapped_column(ForeignKey("muestras.id"), index=True)
+    fecha_asociacion: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+    observaciones: Mapped[str | None] = mapped_column(String(300), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("detalle_id", "muestra_id", name="uq_detalle_muestra"),
+    )
+
+    detalle: Mapped[DetalleOrdenAnalisis] = relationship(back_populates="asociaciones_muestras")
+    muestra: Mapped[Muestra] = relationship(back_populates="asociaciones_detalles")
+

@@ -2,10 +2,11 @@ from datetime import datetime, timezone
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.dao.muestra_dao import MuestraDAO, TipoMuestraDAO
+from app.dao.muestra_dao import AsociacionMuestraDAO, MuestraDAO, TipoMuestraDAO
 from app.dao.orden_analisis_dao import OrdenAnalisisDAO
 from app.dao.tipo_analisis_dao import TipoAnalisisDAO
 from app.models.orden_analisis import (
+    AsociacionDetalleMuestra,
     DetalleOrdenAnalisis,
     HistorialMuestra,
     HistorialOrdenAnalisis,
@@ -16,8 +17,11 @@ from app.models.orden_analisis import (
 )
 from app.models.patient import Consultation, Veterinarian
 from app.schemas.orden_analisis import (
+    AsociarMuestraAnalisisCreate,
+    ConfigurarCompatibilidadCreate,
     MuestraCreate,
     OrdenEstadoUpdate,
+    ResultadoAsociacionRead,
     SolicitudAnalisisCreate,
     TipoAnalisisCreate,
     TipoMuestraCreate,
@@ -48,6 +52,7 @@ class OrdenAnalisisService:
         self.tipo_analisis_dao = TipoAnalisisDAO(db)
         self.muestra_dao = MuestraDAO(db)
         self.tipo_muestra_dao = TipoMuestraDAO(db)
+        self.asociacion_dao = AsociacionMuestraDAO(db)
 
     # --- Gestión de Tipos de Análisis (Catálogo) ---
 
@@ -63,7 +68,37 @@ class OrdenAnalisisService:
             descripcion=payload.descripcion.strip() if payload.descripcion else None,
             activo=True,
         )
+        if payload.tipos_muestra_compatibles_ids:
+            for tmid in payload.tipos_muestra_compatibles_ids:
+                tm = self.tipo_muestra_dao.get_by_id(tmid)
+                if tm:
+                    tipo.tipos_muestra_compatibles.append(tm)
+
         self.tipo_analisis_dao.create(tipo)
+        self.db.commit()
+        self.db.refresh(tipo)
+        return tipo
+
+    def configurar_compatibilidad(
+        self, tipo_analisis_id: int, payload: ConfigurarCompatibilidadCreate
+    ) -> TipoAnalisis:
+        """Configura los tipos de muestra biológica compatibles con un tipo de análisis."""
+        tipo = self.tipo_analisis_dao.get_by_id(tipo_analisis_id)
+        if not tipo:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Tipo de análisis con ID {tipo_analisis_id} no encontrado",
+            )
+        compatibles = []
+        for tmid in payload.tipos_muestra_ids:
+            tm = self.tipo_muestra_dao.get_by_id(tmid)
+            if not tm:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Tipo de muestra con ID {tmid} no existe",
+                )
+            compatibles.append(tm)
+        tipo.tipos_muestra_compatibles = compatibles
         self.db.commit()
         self.db.refresh(tipo)
         return tipo
@@ -339,4 +374,83 @@ class OrdenAnalisisService:
         # Validar existencia de orden
         self.obtener_orden_por_id(orden_id)
         return self.muestra_dao.list_by_orden_id(orden_id)
+
+    # --- Asociación Muestras con Análisis ---
+
+    def asociar_muestra_con_analisis(
+        self, orden_id: int, payload: AsociarMuestraAnalisisCreate
+    ) -> ResultadoAsociacionRead:
+        """
+        Vincula una muestra biológica con los análisis (detalles) que puede satisfacer.
+        - Valida que la muestra y los análisis pertenezcan a la misma orden.
+        - Valida compatibilidad biológica entre el tipo de análisis y el tipo de muestra.
+        - Permite que una misma muestra satisfaga múltiples análisis compatibles.
+        """
+        orden = self.obtener_orden_por_id(orden_id)
+        if orden.estado == "cancelada":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No se pueden asociar muestras a una orden cancelada",
+            )
+
+        muestra = self.obtener_muestra_por_id(payload.muestra_id)
+        if muestra.orden_id != orden.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"La muestra con ID {muestra.id} no pertenece a la orden #{orden.id}",
+            )
+
+        detalles_dict = {d.id: d for d in orden.detalles}
+        asociados = []
+
+        for detalle_id in payload.detalle_ids:
+            if detalle_id not in detalles_dict:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"El análisis solicitado con ID {detalle_id} no pertenece a la orden #{orden.id}",
+                )
+            detalle = detalles_dict[detalle_id]
+
+            # Validar compatibilidad si el tipo de análisis tiene restricciones configuradas
+            if detalle.tipo_analisis.tipos_muestra_compatibles:
+                compatibles_ids = {tm.id for tm in detalle.tipo_analisis.tipos_muestra_compatibles}
+                if muestra.tipo_muestra_id not in compatibles_ids:
+                    nombres_compatibles = ", ".join(
+                        tm.nombre for tm in detalle.tipo_analisis.tipos_muestra_compatibles
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            f"Incompatibilidad biológica: el análisis '{detalle.tipo_analisis.nombre}' "
+                            f"requiere [{nombres_compatibles}], y no es compatible con el tipo de muestra '{muestra.tipo_muestra.nombre}'"
+                        ),
+                    )
+
+            # Verificar si ya existe la asociación
+            existente = self.asociacion_dao.get_by_detalle_and_muestra(detalle.id, muestra.id)
+            if not existente:
+                nueva_asociacion = AsociacionDetalleMuestra(
+                    detalle_id=detalle.id,
+                    muestra_id=muestra.id,
+                    observaciones=payload.observaciones,
+                )
+                self.asociacion_dao.create(nueva_asociacion)
+                detalle.estado = "con_muestra"
+
+            asociados.append(detalle.id)
+
+        self.db.commit()
+        return ResultadoAsociacionRead(
+            muestra_id=muestra.id,
+            detalles_asociados=asociados,
+            mensaje=f"Muestra '{muestra.codigo_etiqueta}' asociada correctamente a {len(asociados)} análisis",
+        )
+
+    def listar_analisis_pendientes_muestra(self, orden_id: int) -> list[DetalleOrdenAnalisis]:
+        """
+        US-09: Identifica análisis de una orden que todavía no cuentan con una muestra adecuada asignada.
+        """
+        orden = self.obtener_orden_por_id(orden_id)
+        return [d for d in orden.detalles if not d.asociaciones_muestras]
+
 

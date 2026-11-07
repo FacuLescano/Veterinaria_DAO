@@ -2,6 +2,27 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 
+# --- Schemas para Tipos de Muestra ---
+
+class TipoMuestraBase(BaseModel):
+    nombre: str = Field(..., max_length=120, description="Nombre del tipo de material biológico (ej: Sangre con EDTA, Orina)")
+    descripcion: str | None = Field(default=None, description="Descripción del tipo de muestra")
+    condiciones_conservacion_default: str | None = Field(
+        default=None, max_length=200, description="Condiciones predeterminadas de conservación (ej: Refrigerar a 4°C)"
+    )
+
+
+class TipoMuestraCreate(TipoMuestraBase):
+    pass
+
+
+class TipoMuestraRead(TipoMuestraBase):
+    id: int
+    activo: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # --- Schemas para TipoAnalisis ---
 
 class TipoAnalisisBase(BaseModel):
@@ -10,14 +31,51 @@ class TipoAnalisisBase(BaseModel):
 
 
 class TipoAnalisisCreate(TipoAnalisisBase):
-    pass
+    tipos_muestra_compatibles_ids: list[int] = Field(
+        default=[], description="IDs de tipos de muestra biológica compatibles con este análisis"
+    )
+
+
+class ConfigurarCompatibilidadCreate(BaseModel):
+    tipos_muestra_ids: list[int] = Field(
+        ..., description="Lista de IDs de tipos de muestra biológica compatibles con este tipo de análisis"
+    )
 
 
 class TipoAnalisisRead(TipoAnalisisBase):
     id: int
     activo: bool
+    tipos_muestra_compatibles: list[TipoMuestraRead] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# --- Schemas para Asociación Detalle - Muestra (US-09) ---
+
+class AsociacionDetalleMuestraRead(BaseModel):
+    id: int
+    detalle_id: int
+    muestra_id: int
+    fecha_asociacion: datetime
+    observaciones: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AsociarMuestraAnalisisCreate(BaseModel):
+    muestra_id: int = Field(..., description="ID de la muestra biológica a vincular")
+    detalle_ids: list[int] = Field(
+        ..., min_length=1, description="Lista de IDs de análisis solicitados (detalles) a satisfacer con esta muestra"
+    )
+    observaciones: str | None = Field(
+        default=None, max_length=300, description="Observaciones opcionales sobre la asociación o idoneidad"
+    )
+
+
+class ResultadoAsociacionRead(BaseModel):
+    muestra_id: int
+    detalles_asociados: list[int]
+    mensaje: str
 
 
 # --- Schemas para DetalleOrdenAnalisis ---
@@ -34,6 +92,8 @@ class DetalleOrdenAnalisisRead(BaseModel):
     indicaciones: str | None
     estado: str
     tipo_analisis: TipoAnalisisRead | None = None
+    tiene_muestra: bool = False
+    asociaciones_muestras: list[AsociacionDetalleMuestraRead] = []
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -59,49 +119,13 @@ class OrdenEstadoUpdate(BaseModel):
     motivo: str | None = Field(default=None, description="Motivo del cambio de estado o cancelación")
 
 
-# --- Schemas para US-06: Solicitar Análisis ---
+# --- Schemas para OrdenAnalisis ---
 
 class SolicitudAnalisisCreate(BaseModel):
     consulta_id: int = Field(..., description="ID de la consulta médica que origina la solicitud")
     veterinario_id: int | None = Field(default=None, description="ID del veterinario solicitante (opcional, por defecto toma el de la consulta)")
     observaciones: str | None = Field(default=None, description="Observaciones generales sobre la solicitud")
     detalles: list[DetalleOrdenAnalisisCreate] = Field(..., min_length=1, description="Lista de análisis solicitados con sus indicaciones")
-
-
-class OrdenAnalisisRead(BaseModel):
-    id: int
-    consulta_id: int
-    veterinario_id: int
-    estado: str
-    observaciones: str | None
-    created_at: datetime
-    paciente_id: int | None = None
-    paciente_nombre: str | None = None
-    veterinario_nombre: str | None = None
-    detalles: list[DetalleOrdenAnalisisRead] = []
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-# --- Schemas para Muestras Biológicas ---
-
-class TipoMuestraBase(BaseModel):
-    nombre: str = Field(..., max_length=120, description="Nombre del tipo de material biológico (ej: Sangre con EDTA, Orina)")
-    descripcion: str | None = Field(default=None, description="Descripción del tipo de muestra")
-    condiciones_conservacion_default: str | None = Field(
-        default=None, max_length=200, description="Condiciones predeterminadas de conservación (ej: Refrigerar a 4°C)"
-    )
-
-
-class TipoMuestraCreate(TipoMuestraBase):
-    pass
-
-
-class TipoMuestraRead(TipoMuestraBase):
-    id: int
-    activo: bool
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 class HistorialMuestraRead(BaseModel):
@@ -156,3 +180,18 @@ class MuestraRead(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
+class OrdenAnalisisRead(BaseModel):
+    id: int
+    consulta_id: int
+    veterinario_id: int
+    estado: str
+    observaciones: str | None
+    created_at: datetime
+    paciente_id: int | None = None
+    paciente_nombre: str | None = None
+    veterinario_nombre: str | None = None
+    detalles: list[DetalleOrdenAnalisisRead] = []
+    muestras: list[MuestraRead] = []
+
+    model_config = ConfigDict(from_attributes=True)

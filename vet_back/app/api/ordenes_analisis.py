@@ -3,11 +3,15 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.schemas.orden_analisis import (
+    AsociarMuestraAnalisisCreate,
+    ConfigurarCompatibilidadCreate,
+    DetalleOrdenAnalisisRead,
     HistorialOrdenAnalisisRead,
     MuestraCreate,
     MuestraRead,
     OrdenAnalisisRead,
     OrdenEstadoUpdate,
+    ResultadoAsociacionRead,
     SolicitudAnalisisCreate,
     TipoAnalisisCreate,
     TipoAnalisisRead,
@@ -48,6 +52,19 @@ def list_tipos_analisis(
     service: OrdenAnalisisService = Depends(get_service),
 ):
     return service.listar_tipos_analisis(only_active=only_active)
+
+
+@router.post(
+    "/tipos-analisis/{tipo_analisis_id}/compatibilidad",
+    response_model=TipoAnalisisRead,
+    summary="US-09: Configurar qué tipos de muestra son compatibles con un tipo de análisis",
+)
+def configurar_compatibilidad(
+    tipo_analisis_id: int,
+    payload: ConfigurarCompatibilidadCreate,
+    service: OrdenAnalisisService = Depends(get_service),
+):
+    return service.configurar_compatibilidad(tipo_analisis_id, payload)
 
 
 # --- Crear y Solicitar Orden de Análisis ---
@@ -205,4 +222,32 @@ def list_muestras_por_orden(
     service: OrdenAnalisisService = Depends(get_service),
 ):
     return service.listar_muestras_por_orden(orden_id)
+
+
+# --- Asociación Muestras con Análisis ---
+
+@router.post(
+    "/ordenes-analisis/{orden_id}/asociar-muestra",
+    response_model=ResultadoAsociacionRead,
+    summary="US-09: Vincular una muestra con uno o varios análisis que puede satisfacer",
+)
+def asociar_muestra_con_analisis(
+    orden_id: int,
+    payload: AsociarMuestraAnalisisCreate,
+    service: OrdenAnalisisService = Depends(get_service),
+):
+    return service.asociar_muestra_con_analisis(orden_id, payload)
+
+
+@router.get(
+    "/ordenes-analisis/{orden_id}/analisis-pendientes",
+    response_model=list[DetalleOrdenAnalisisRead],
+    summary="US-09: Identificar análisis de la orden que todavía no cuentan con una muestra adecuada asignada",
+)
+def list_analisis_pendientes_muestra(
+    orden_id: int,
+    service: OrdenAnalisisService = Depends(get_service),
+):
+    return service.listar_analisis_pendientes_muestra(orden_id)
+
 
