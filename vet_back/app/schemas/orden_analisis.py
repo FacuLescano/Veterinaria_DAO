@@ -38,6 +38,27 @@ class DetalleOrdenAnalisisRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+# --- Schemas para Historial y Estado de Orden ---
+
+class HistorialOrdenAnalisisRead(BaseModel):
+    id: int
+    orden_id: int
+    estado_anterior: str | None
+    estado_nuevo: str
+    changed_at: datetime
+    motivo: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class OrdenEstadoUpdate(BaseModel):
+    nuevo_estado: str = Field(
+        ...,
+        description="Nuevo estado de la orden: solicitada, en_preparacion, enviada, con_resultados, cancelada",
+    )
+    motivo: str | None = Field(default=None, description="Motivo del cambio de estado o cancelación")
+
+
 # --- Schemas para US-06: Solicitar Análisis ---
 
 class SolicitudAnalisisCreate(BaseModel):
@@ -54,6 +75,9 @@ class OrdenAnalisisRead(BaseModel):
     estado: str
     observaciones: str | None
     created_at: datetime
+    paciente_id: int | None = None
+    paciente_nombre: str | None = None
+    veterinario_nombre: str | None = None
     detalles: list[DetalleOrdenAnalisisRead] = []
 
     model_config = ConfigDict(from_attributes=True)

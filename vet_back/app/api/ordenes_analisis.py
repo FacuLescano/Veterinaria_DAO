@@ -3,7 +3,9 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.schemas.orden_analisis import (
+    HistorialOrdenAnalisisRead,
     OrdenAnalisisRead,
+    OrdenEstadoUpdate,
     SolicitudAnalisisCreate,
     TipoAnalisisCreate,
     TipoAnalisisRead,
@@ -44,7 +46,7 @@ def list_tipos_analisis(
     return service.listar_tipos_analisis(only_active=only_active)
 
 
-# --- US-06: Solicitar Análisis ---
+# --- Crear y Solicitar Orden de Análisis ---
 
 @router.post(
     "/ordenes-analisis/solicitar",
@@ -53,6 +55,19 @@ def list_tipos_analisis(
     summary="US-06: Solicitar uno o varios análisis clínicos para una consulta",
 )
 def solicitar_analisis(
+    payload: SolicitudAnalisisCreate,
+    service: OrdenAnalisisService = Depends(get_service),
+):
+    return service.solicitar_analisis(payload)
+
+
+@router.post(
+    "/ordenes-analisis",
+    response_model=OrdenAnalisisRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="US-07: Crear formalmente una orden de análisis para enviar al laboratorio",
+)
+def crear_orden_analisis(
     payload: SolicitudAnalisisCreate,
     service: OrdenAnalisisService = Depends(get_service),
 ):
@@ -74,13 +89,40 @@ def list_ordenes_analisis(
 @router.get(
     "/ordenes-analisis/{orden_id}",
     response_model=OrdenAnalisisRead,
-    summary="Obtener detalle de una orden de análisis por ID",
+    summary="US-07: Obtener detalle completo de una orden de análisis (paciente, solicitante, análisis)",
 )
 def get_orden_analisis(
     orden_id: int,
     service: OrdenAnalisisService = Depends(get_service),
 ):
     return service.obtener_orden_por_id(orden_id)
+
+
+# --- Formalización, Cambios de Estado e Historial ---
+
+@router.patch(
+    "/ordenes-analisis/{orden_id}/estado",
+    response_model=OrdenAnalisisRead,
+    summary="US-07: Actualizar o formalizar el estado de la orden (ej: pasar a en_preparacion)",
+)
+def update_estado_orden(
+    orden_id: int,
+    payload: OrdenEstadoUpdate,
+    service: OrdenAnalisisService = Depends(get_service),
+):
+    return service.actualizar_estado_orden(orden_id, payload)
+
+
+@router.get(
+    "/ordenes-analisis/{orden_id}/historial",
+    response_model=list[HistorialOrdenAnalisisRead],
+    summary="US-07: Consultar el historial de trazabilidad y cambios de estado de una orden",
+)
+def get_historial_orden(
+    orden_id: int,
+    service: OrdenAnalisisService = Depends(get_service),
+):
+    return service.obtener_historial_orden(orden_id)
 
 
 @router.get(

@@ -1,23 +1,33 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.orden_analisis import DetalleOrdenAnalisis, OrdenAnalisis
+from app.models.orden_analisis import (
+    DetalleOrdenAnalisis,
+    HistorialOrdenAnalisis,
+    OrdenAnalisis,
+)
+from app.models.patient import Consultation
 
 
 class OrdenAnalisisDAO:
+    """DAO para operaciones de persistencia relacionadas a OrdenAnalisis, sus detalles e historial (US-06 y US-07)."""
 
     def __init__(self, db: Session):
         self.db = db
+
+    def _default_options(self):
+        return [
+            selectinload(OrdenAnalisis.detalles).selectinload(DetalleOrdenAnalisis.tipo_analisis),
+            selectinload(OrdenAnalisis.consulta).selectinload(Consultation.pet),
+            selectinload(OrdenAnalisis.veterinario),
+            selectinload(OrdenAnalisis.historial),
+        ]
 
     def get_by_id(self, orden_id: int) -> OrdenAnalisis | None:
         query = (
             select(OrdenAnalisis)
             .where(OrdenAnalisis.id == orden_id)
-            .options(
-                selectinload(OrdenAnalisis.detalles).selectinload(DetalleOrdenAnalisis.tipo_analisis),
-                selectinload(OrdenAnalisis.consulta),
-                selectinload(OrdenAnalisis.veterinario),
-            )
+            .options(*self._default_options())
         )
         return self.db.scalars(query).first()
 
@@ -25,11 +35,7 @@ class OrdenAnalisisDAO:
         query = (
             select(OrdenAnalisis)
             .where(OrdenAnalisis.consulta_id == consulta_id)
-            .options(
-                selectinload(OrdenAnalisis.detalles).selectinload(DetalleOrdenAnalisis.tipo_analisis),
-                selectinload(OrdenAnalisis.consulta),
-                selectinload(OrdenAnalisis.veterinario),
-            )
+            .options(*self._default_options())
             .order_by(OrdenAnalisis.created_at.desc())
         )
         return list(self.db.scalars(query).all())
@@ -37,11 +43,7 @@ class OrdenAnalisisDAO:
     def list_all(self) -> list[OrdenAnalisis]:
         query = (
             select(OrdenAnalisis)
-            .options(
-                selectinload(OrdenAnalisis.detalles).selectinload(DetalleOrdenAnalisis.tipo_analisis),
-                selectinload(OrdenAnalisis.consulta),
-                selectinload(OrdenAnalisis.veterinario),
-            )
+            .options(*self._default_options())
             .order_by(OrdenAnalisis.created_at.desc())
         )
         return list(self.db.scalars(query).all())
@@ -50,3 +52,16 @@ class OrdenAnalisisDAO:
         self.db.add(orden)
         self.db.flush()
         return orden
+
+    def add_historial(self, historial: HistorialOrdenAnalisis) -> HistorialOrdenAnalisis:
+        self.db.add(historial)
+        self.db.flush()
+        return historial
+
+    def get_historial(self, orden_id: int) -> list[HistorialOrdenAnalisis]:
+        query = (
+            select(HistorialOrdenAnalisis)
+            .where(HistorialOrdenAnalisis.orden_id == orden_id)
+            .order_by(HistorialOrdenAnalisis.changed_at.asc())
+        )
+        return list(self.db.scalars(query).all())

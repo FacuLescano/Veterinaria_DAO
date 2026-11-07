@@ -5,14 +5,32 @@ from app.dao.orden_analisis_dao import OrdenAnalisisDAO
 from app.dao.tipo_analisis_dao import TipoAnalisisDAO
 from app.models.orden_analisis import (
     DetalleOrdenAnalisis,
+    HistorialOrdenAnalisis,
     OrdenAnalisis,
     TipoAnalisis,
 )
 from app.models.patient import Consultation, Veterinarian
 from app.schemas.orden_analisis import (
+    OrdenEstadoUpdate,
     SolicitudAnalisisCreate,
     TipoAnalisisCreate,
 )
+
+ESTADOS_VALIDOS_ORDEN = {
+    "solicitada",
+    "en_preparacion",
+    "enviada",
+    "con_resultados",
+    "cancelada",
+}
+
+TRANSICIONES_VALIDAS: dict[str, set[str]] = {
+    "solicitada": {"en_preparacion", "cancelada"},
+    "en_preparacion": {"enviada", "cancelada"},
+    "enviada": {"con_resultados", "cancelada"},
+    "con_resultados": set(),
+    "cancelada": set(),
+}
 
 
 class OrdenAnalisisService:
@@ -44,12 +62,12 @@ class OrdenAnalisisService:
     def listar_tipos_analisis(self, only_active: bool = True) -> list[TipoAnalisis]:
         return self.tipo_analisis_dao.list_all(only_active=only_active)
 
-    # --- US-06: Solicitar Análisis ---
+    # --- Crear y Solicitar Orden de Análisis ---
 
     def solicitar_analisis(self, payload: SolicitudAnalisisCreate) -> OrdenAnalisis:
         """
-        US-06: Solicitar uno o varios análisis vinculados a una consulta.
-        Aplica las reglas de negocio y delega la persistencia al DAO.
+        Crea una orden de análisis formal vinculada a la consulta médica.
+        Registra la orden con sus detalles y genera el primer evento en el historial.
         """
         # 1. Validar que la consulta médica exista
         consulta = self.db.get(Consultation, payload.consulta_id)
@@ -111,13 +129,77 @@ class OrdenAnalisisService:
             observaciones=payload.observaciones,
             detalles=detalles_entidad,
         )
-
-        # 6. Persistir mediante el DAO
         self.orden_dao.create(orden)
+
+        # 6. Registrar evento inicial en el historial
+        historial_inicial = HistorialOrdenAnalisis(
+            orden_id=orden.id,
+            estado_anterior=None,
+            estado_nuevo="solicitada",
+            motivo="Orden creada y solicitada",
+        )
+        self.orden_dao.add_historial(historial_inicial)
+
+        # 7. Persistir transacción
         self.db.commit()
         self.db.refresh(orden)
 
         return self.obtener_orden_por_id(orden.id)
+
+    # --- Formalización y Gestión de Estados e Historial ---
+
+    def actualizar_estado_orden(
+        self, orden_id: int, payload: OrdenEstadoUpdate
+    ) -> OrdenAnalisis:
+        """
+        Actualiza o formaliza el estado de la orden.
+        Valida que la transición de estado sea permitida y registra el cambio en el historial.
+        """
+        orden = self.obtener_orden_por_id(orden_id)
+        nuevo_estado = payload.nuevo_estado.lower().strip()
+
+        if nuevo_estado not in ESTADOS_VALIDOS_ORDEN:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Estado '{nuevo_estado}' no válido. Estados permitidos: {', '.join(sorted(ESTADOS_VALIDOS_ORDEN))}",
+            )
+
+        if nuevo_estado == orden.estado:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"La orden ya se encuentra en estado '{orden.estado}'",
+            )
+
+        transiciones_permitidas = TRANSICIONES_VALIDAS.get(orden.estado, set())
+        if nuevo_estado not in transiciones_permitidas:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Transición no permitida: no se puede cambiar de '{orden.estado}' a '{nuevo_estado}'. "
+                    f"Transiciones válidas: {', '.join(sorted(transiciones_permitidas)) or 'Ninguna (estado final)'}"
+                ),
+            )
+
+        estado_anterior = orden.estado
+        orden.estado = nuevo_estado
+
+        # Registrar en el historial de trazabilidad
+        evento_historial = HistorialOrdenAnalisis(
+            orden_id=orden.id,
+            estado_anterior=estado_anterior,
+            estado_nuevo=nuevo_estado,
+            motivo=payload.motivo or f"Cambio de estado a {nuevo_estado}",
+        )
+        self.orden_dao.add_historial(evento_historial)
+
+        self.db.commit()
+        self.db.refresh(orden)
+        return self.obtener_orden_por_id(orden.id)
+
+    def obtener_historial_orden(self, orden_id: int) -> list[HistorialOrdenAnalisis]:
+        """Consulta el historial de estados de una orden específica."""
+        self.obtener_orden_por_id(orden_id)
+        return self.orden_dao.get_historial(orden_id)
 
     # --- Consultas ---
 

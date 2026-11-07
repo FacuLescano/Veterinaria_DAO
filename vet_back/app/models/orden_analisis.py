@@ -36,6 +36,22 @@ class OrdenAnalisis(Base):
     detalles: Mapped[list["DetalleOrdenAnalisis"]] = relationship(
         back_populates="orden", cascade="all, delete-orphan"
     )
+    historial: Mapped[list["HistorialOrdenAnalisis"]] = relationship(
+        back_populates="orden", cascade="all, delete-orphan", order_by="HistorialOrdenAnalisis.changed_at"
+    )
+
+    # Propiedades para facilitar la consulta del paciente y solicitante (US-07)
+    @property
+    def paciente_id(self) -> int | None:
+        return self.consulta.pet_id if self.consulta else None
+
+    @property
+    def paciente_nombre(self) -> str | None:
+        return self.consulta.pet.name if self.consulta and self.consulta.pet else None
+
+    @property
+    def veterinario_nombre(self) -> str | None:
+        return self.veterinario.full_name if self.veterinario else None
 
 
 class DetalleOrdenAnalisis(Base):
@@ -49,3 +65,18 @@ class DetalleOrdenAnalisis(Base):
 
     orden: Mapped[OrdenAnalisis] = relationship(back_populates="detalles")
     tipo_analisis: Mapped[TipoAnalisis] = relationship(back_populates="detalles")
+
+
+class HistorialOrdenAnalisis(Base):
+    __tablename__ = "historial_ordenes_analisis"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    orden_id: Mapped[int] = mapped_column(ForeignKey("ordenes_analisis.id"), index=True)
+    estado_anterior: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    estado_nuevo: Mapped[str] = mapped_column(String(30))
+    changed_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+    motivo: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    orden: Mapped[OrdenAnalisis] = relationship(back_populates="historial")
