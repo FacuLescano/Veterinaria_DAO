@@ -3,10 +3,10 @@ from datetime import date, datetime
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.session import Base
+from app.db.session import ModeloBase
 
 
-class Responsible(Base):
+class Responsable(ModeloBase):
     __tablename__ = "responsables"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -15,10 +15,10 @@ class Responsible(Base):
     phone: Mapped[str] = mapped_column(String(40))
     email: Mapped[str | None] = mapped_column(String(254), nullable=True)
     address: Mapped[str | None] = mapped_column(String(240), nullable=True)
-    pets: Mapped[list["Pet"]] = relationship(back_populates="responsible")
+    pets: Mapped[list["Mascota"]] = relationship(back_populates="responsible")
 
 
-class Veterinarian(Base):
+class Veterinario(ModeloBase):
     __tablename__ = "veterinarios"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -26,11 +26,11 @@ class Veterinarian(Base):
     license_number: Mapped[str] = mapped_column(String(60), unique=True, index=True)
     specialty: Mapped[str | None] = mapped_column(String(120), nullable=True)
     active: Mapped[bool] = mapped_column(default=True)
-    appointments: Mapped[list["Appointment"]] = relationship(back_populates="veterinarian")
-    consultations: Mapped[list["Consultation"]] = relationship(back_populates="veterinarian")
+    appointments: Mapped[list["Turno"]] = relationship(back_populates="veterinarian")
+    consultations: Mapped[list["Consulta"]] = relationship(back_populates="veterinarian")
 
 
-class Pet(Base):
+class Mascota(ModeloBase):
     __tablename__ = "mascotas"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -41,25 +41,25 @@ class Pet(Base):
     sex: Mapped[str | None] = mapped_column(String(30), nullable=True)
     birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    responsible: Mapped[Responsible] = relationship(back_populates="pets")
-    ownership_history: Mapped[list["PetResponsibleHistory"]] = relationship(
-        back_populates="pet", cascade="all, delete-orphan", order_by="PetResponsibleHistory.changed_at"
+    responsible: Mapped[Responsable] = relationship(back_populates="pets")
+    ownership_history: Mapped[list["HistorialResponsableMascota"]] = relationship(
+        back_populates="pet", cascade="all, delete-orphan", order_by="HistorialResponsableMascota.changed_at"
     )
-    appointments: Mapped[list["Appointment"]] = relationship(back_populates="pet")
-    consultations: Mapped[list["Consultation"]] = relationship(back_populates="pet")
+    appointments: Mapped[list["Turno"]] = relationship(back_populates="pet")
+    consultations: Mapped[list["Consulta"]] = relationship(back_populates="pet")
 
 
-class PetResponsibleHistory(Base):
+class HistorialResponsableMascota(ModeloBase):
     __tablename__ = "historial_responsables_mascota"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     pet_id: Mapped[int] = mapped_column(ForeignKey("mascotas.id"), index=True)
     responsible_id: Mapped[int] = mapped_column(ForeignKey("responsables.id"))
     changed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    pet: Mapped[Pet] = relationship(back_populates="ownership_history")
+    pet: Mapped[Mascota] = relationship(back_populates="ownership_history")
 
 
-class Appointment(Base):
+class Turno(ModeloBase):
     __tablename__ = "turnos"
     __table_args__ = (UniqueConstraint("veterinarian_id", "scheduled_at", name="uq_vet_turno_horario"),)
 
@@ -71,15 +71,15 @@ class Appointment(Base):
     status: Mapped[str] = mapped_column(String(20), default="pendiente", index=True)
     reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    pet: Mapped[Pet] = relationship(back_populates="appointments")
-    veterinarian: Mapped[Veterinarian] = relationship(back_populates="appointments")
-    consultations: Mapped[list["Consultation"]] = relationship(back_populates="appointment")
-    history: Mapped[list["AppointmentHistory"]] = relationship(
-        back_populates="appointment", cascade="all, delete-orphan", order_by="AppointmentHistory.changed_at"
+    pet: Mapped[Mascota] = relationship(back_populates="appointments")
+    veterinarian: Mapped[Veterinario] = relationship(back_populates="appointments")
+    consultations: Mapped[list["Consulta"]] = relationship(back_populates="appointment")
+    history: Mapped[list["HistorialTurno"]] = relationship(
+        back_populates="appointment", cascade="all, delete-orphan", order_by="HistorialTurno.changed_at"
     )
 
 
-class AppointmentHistory(Base):
+class HistorialTurno(ModeloBase):
     __tablename__ = "historial_turnos"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -91,10 +91,10 @@ class AppointmentHistory(Base):
     new_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     changed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    appointment: Mapped[Appointment] = relationship(back_populates="history")
+    appointment: Mapped[Turno] = relationship(back_populates="history")
 
 
-class Consultation(Base):
+class Consulta(ModeloBase):
     __tablename__ = "consultas_medicas"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -106,6 +106,6 @@ class Consultation(Base):
     observations: Mapped[str | None] = mapped_column(Text, nullable=True)
     diagnosis: Mapped[str | None] = mapped_column(Text, nullable=True)
     treatment: Mapped[str | None] = mapped_column(Text, nullable=True)
-    pet: Mapped[Pet] = relationship(back_populates="consultations")
-    veterinarian: Mapped[Veterinarian] = relationship(back_populates="consultations")
-    appointment: Mapped[Appointment | None] = relationship(back_populates="consultations")
+    pet: Mapped[Mascota] = relationship(back_populates="consultations")
+    veterinarian: Mapped[Veterinario] = relationship(back_populates="consultations")
+    appointment: Mapped[Turno | None] = relationship(back_populates="consultations")

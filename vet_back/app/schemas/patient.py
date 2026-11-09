@@ -3,11 +3,11 @@ from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class ORMModel(BaseModel):
+class ModeloORM(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class ResponsibleCreate(BaseModel):
+class CrearResponsable(BaseModel):
     document_number: str = Field(min_length=3, max_length=40)
     full_name: str = Field(min_length=2, max_length=160)
     phone: str = Field(min_length=3, max_length=40)
@@ -15,14 +15,14 @@ class ResponsibleCreate(BaseModel):
     address: str | None = Field(default=None, max_length=240)
 
 
-class ResponsibleUpdate(BaseModel):
+class ActualizarResponsable(BaseModel):
     full_name: str | None = Field(default=None, min_length=2, max_length=160)
     phone: str | None = Field(default=None, min_length=3, max_length=40)
     email: str | None = Field(default=None, max_length=254)
     address: str | None = Field(default=None, max_length=240)
 
 
-class ResponsibleRead(ORMModel):
+class LecturaResponsable(ModeloORM):
     id: int
     document_number: str
     full_name: str
@@ -31,19 +31,19 @@ class ResponsibleRead(ORMModel):
     address: str | None
 
 
-class VeterinarianCreate(BaseModel):
+class CrearVeterinario(BaseModel):
     full_name: str = Field(min_length=2, max_length=160)
     license_number: str = Field(min_length=3, max_length=60)
     specialty: str | None = Field(default=None, max_length=120)
 
 
-class VeterinarianUpdate(BaseModel):
+class ActualizarVeterinario(BaseModel):
     full_name: str | None = Field(default=None, min_length=2, max_length=160)
     specialty: str | None = Field(default=None, max_length=120)
     active: bool | None = None
 
 
-class VeterinarianRead(ORMModel):
+class LecturaVeterinario(ModeloORM):
     id: int
     full_name: str
     license_number: str
@@ -51,7 +51,7 @@ class VeterinarianRead(ORMModel):
     active: bool
 
 
-class PetCreate(BaseModel):
+class CrearMascota(BaseModel):
     responsible_id: int
     name: str = Field(min_length=1, max_length=100)
     species: str = Field(min_length=2, max_length=80)
@@ -61,7 +61,7 @@ class PetCreate(BaseModel):
     notes: str | None = None
 
 
-class PetUpdate(BaseModel):
+class ActualizarMascota(BaseModel):
     responsible_id: int | None = None
     name: str | None = Field(default=None, min_length=1, max_length=100)
     species: str | None = Field(default=None, min_length=2, max_length=80)
@@ -71,7 +71,7 @@ class PetUpdate(BaseModel):
     notes: str | None = None
 
 
-class PetRead(ORMModel):
+class LecturaMascota(ModeloORM):
     id: int
     responsible_id: int
     name: str
@@ -82,13 +82,13 @@ class PetRead(ORMModel):
     notes: str | None
 
 
-class PetResponsibleHistoryRead(ORMModel):
+class LecturaHistorialResponsablesMascota(ModeloORM):
     id: int
     responsible_id: int
     changed_at: datetime
 
 
-class AppointmentCreate(BaseModel):
+class CrearTurno(BaseModel):
     pet_id: int
     veterinarian_id: int
     scheduled_at: datetime
@@ -96,7 +96,7 @@ class AppointmentCreate(BaseModel):
     reason: str | None = Field(default=None, max_length=500)
 
 
-class AppointmentUpdate(BaseModel):
+class ActualizarTurno(BaseModel):
     pet_id: int | None = None
     veterinarian_id: int | None = None
     scheduled_at: datetime | None = None
@@ -104,12 +104,12 @@ class AppointmentUpdate(BaseModel):
     reason: str | None = Field(default=None, max_length=500)
 
 
-class AppointmentStatusUpdate(BaseModel):
+class ActualizacionEstadoTurno(BaseModel):
     status: str
     reason: str | None = Field(default=None, max_length=500)
 
 
-class AppointmentRead(ORMModel):
+class LecturaTurno(ModeloORM):
     id: int
     pet_id: int
     veterinarian_id: int
@@ -120,7 +120,7 @@ class AppointmentRead(ORMModel):
     created_at: datetime
 
 
-class AppointmentHistoryRead(ORMModel):
+class LecturaHistorialTurno(ModeloORM):
     id: int
     event: str
     previous_scheduled_at: datetime | None
@@ -131,7 +131,7 @@ class AppointmentHistoryRead(ORMModel):
     reason: str | None
 
 
-class ConsultationCreate(BaseModel):
+class CrearConsulta(BaseModel):
     pet_id: int
     veterinarian_id: int
     appointment_id: int | None = None
@@ -142,7 +142,7 @@ class ConsultationCreate(BaseModel):
     treatment: str | None = None
 
 
-class ConsultationRead(ORMModel):
+class LecturaConsulta(ModeloORM):
     id: int
     pet_id: int
     veterinarian_id: int

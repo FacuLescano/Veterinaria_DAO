@@ -5,11 +5,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 
-class Base(DeclarativeBase):
+class ModeloBase(DeclarativeBase):
     pass
 
 
-def _database_url() -> str:
+def _obtener_url_base_datos() -> str:
     url = os.getenv("DATABASE_URL")
     if url:
         return url
@@ -18,7 +18,7 @@ def _database_url() -> str:
     return f"sqlite:///{database_path.as_posix()}"
 
 
-DATABASE_URL = _database_url()
+DATABASE_URL = _obtener_url_base_datos()
 engine = create_engine(
     DATABASE_URL,
     connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
@@ -26,7 +26,7 @@ engine = create_engine(
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
-def get_db():
+def obtener_sesion_bd():
     db = SessionLocal()
     try:
         yield db

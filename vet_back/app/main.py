@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
-from app.api.patients import router as patients_router
-from app.db.session import Base, engine
+from app.api.patients import router as enrutador_pacientes
+from app.db.session import ModeloBase, engine
 from app.models import patient  # Registra las entidades en el metadata de SQLAlchemy.
 
 app = FastAPI(
@@ -10,12 +10,12 @@ app = FastAPI(
     version="0.2.0",
 )
 
-app.include_router(patients_router)
+app.include_router(enrutador_pacientes)
 
 
 @app.on_event("startup")
-def create_database_tables():
-    Base.metadata.create_all(bind=engine)
+def crear_tablas_de_base_de_datos():
+    ModeloBase.metadata.create_all(bind=engine)
 
 
 @app.get("/")
@@ -28,5 +28,5 @@ def inicio():
 
 
 @app.get("/health", tags=["Sistema"])
-def health_check():
+def verificar_estado():
     return {"status": "ok", "message": "La API está funcionando"}
