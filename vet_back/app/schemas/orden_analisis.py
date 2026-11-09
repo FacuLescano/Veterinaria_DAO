@@ -195,3 +195,40 @@ class OrdenAnalisisRead(BaseModel):
     muestras: list[MuestraRead] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# --- Schemas para Estado de Orden y Muestras ---
+
+class MuestraEstadoUpdate(BaseModel):
+    nuevo_estado: str = Field(
+        ...,
+        description="Nuevo estado de la muestra: extraida, pendiente_preparacion, lista_para_envio, enviada, con_inconveniente",
+    )
+    responsable: str = Field(
+        ..., min_length=1, max_length=160, description="Nombre o cargo de quien realiza el cambio de estado"
+    )
+    motivo: str | None = Field(
+        default=None, max_length=500, description="Motivo del cambio de estado o detalle del inconveniente"
+    )
+
+
+class ResumenEstadoMuestrasRead(BaseModel):
+    total: int
+    registradas: int
+    pendientes_preparacion: int
+    listas_para_envio: int
+    enviadas: int
+    con_inconvenientes: int
+
+
+class SeguimientoOrdenMuestrasRead(BaseModel):
+    orden_id: int
+    estado_orden: str
+    paciente_nombre: str | None = None
+    resumen_muestras: ResumenEstadoMuestrasRead
+    muestras_listas_para_enviar: list[MuestraRead] = []
+    muestras_pendientes_preparacion: list[MuestraRead] = []
+    muestras_con_inconvenientes: list[MuestraRead] = []
+    analisis_sin_muestra: list[DetalleOrdenAnalisisRead] = []
+    lista_para_despacho: bool
+

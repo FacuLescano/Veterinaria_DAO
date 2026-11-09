@@ -20,8 +20,11 @@ from app.schemas.orden_analisis import (
     AsociarMuestraAnalisisCreate,
     ConfigurarCompatibilidadCreate,
     MuestraCreate,
+    MuestraEstadoUpdate,
     OrdenEstadoUpdate,
     ResultadoAsociacionRead,
+    ResumenEstadoMuestrasRead,
+    SeguimientoOrdenMuestrasRead,
     SolicitudAnalisisCreate,
     TipoAnalisisCreate,
     TipoMuestraCreate,
@@ -33,6 +36,14 @@ ESTADOS_VALIDOS_ORDEN = {
     "enviada",
     "con_resultados",
     "cancelada",
+}
+
+ESTADOS_VALIDOS_MUESTRA = {
+    "extraida",
+    "pendiente_preparacion",
+    "lista_para_envio",
+    "enviada",
+    "con_inconveniente",
 }
 
 TRANSICIONES_VALIDAS: dict[str, set[str]] = {
@@ -452,5 +463,126 @@ class OrdenAnalisisService:
         """
         orden = self.obtener_orden_por_id(orden_id)
         return [d for d in orden.detalles if not d.asociaciones_muestras]
+
+    # --- Gestión y Consulta de Estado de Muestras y Orden ---
+
+    def actualizar_estado_muestra(
+        self, muestra_id: int, payload: MuestraEstadoUpdate
+    ) -> Muestra:
+        """
+        US-10: Actualiza el estado de una muestra biológica y registra la trazabilidad en su historial.
+        Criterio: No se permite enviar muestras sin identificación o sin la información obligatoria.
+        """
+        muestra = self.obtener_muestra_por_id(muestra_id)
+        nuevo_estado = payload.nuevo_estado.lower().strip()
+
+        if nuevo_estado not in ESTADOS_VALIDOS_MUESTRA:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Estado '{nuevo_estado}' no válido para la muestra. Estados permitidos: {', '.join(sorted(ESTADOS_VALIDOS_MUESTRA))}",
+            )
+
+        if nuevo_estado == muestra.estado:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"La muestra ya se encuentra en estado '{muestra.estado}'",
+            )
+
+        # Regla de aceptación US-10: No se permite enviar muestras sin identificación o información obligatoria
+        if nuevo_estado == "enviada":
+            if not muestra.codigo_etiqueta or not muestra.codigo_etiqueta.strip():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No se permite enviar muestras sin identificación física (código de etiqueta)",
+                )
+            if not muestra.responsable_extraccion or not muestra.responsable_extraccion.strip():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No se permite enviar muestras sin responsable de extracción registrado",
+                )
+            if not muestra.condiciones_conservacion or not muestra.condiciones_conservacion.strip():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No se permite enviar muestras sin condiciones de conservación especificadas",
+                )
+            if not muestra.asociaciones_detalles:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No se permite enviar una muestra que no esté asociada a ningún análisis solicitado",
+                )
+
+        estado_anterior = muestra.estado
+        muestra.estado = nuevo_estado
+
+        # Registrar trazabilidad en el historial de la muestra
+        evento_historial = HistorialMuestra(
+            muestra_id=muestra.id,
+            estado_anterior=estado_anterior,
+            estado_nuevo=nuevo_estado,
+            changed_at=datetime.now(timezone.utc),
+            motivo=payload.motivo or f"Cambio de estado a {nuevo_estado}",
+            responsable=payload.responsable.strip(),
+        )
+        self.muestra_dao.add_historial(evento_historial)
+
+        self.db.commit()
+        self.db.refresh(muestra)
+        return self.obtener_muestra_por_id(muestra.id)
+
+    def obtener_historial_muestra(self, muestra_id: int) -> list[HistorialMuestra]:
+        """US-10: Consulta el historial cronológico de cambios de estado de una muestra."""
+        self.obtener_muestra_por_id(muestra_id)
+        return self.muestra_dao.get_historial(muestra_id)
+
+    def consultar_estado_orden_y_muestras(self, orden_id: int) -> SeguimientoOrdenMuestrasRead:
+        """
+        US-10: Consultar el estado de una orden y sus muestras para conocer cuáles están listas para enviar
+        y cuáles tienen inconvenientes.
+        """
+        orden = self.obtener_orden_por_id(orden_id)
+
+        # Categorizar muestras según su estado
+        registradas = [m for m in orden.muestras if m.estado == "extraida"]
+        pendientes_prep = [m for m in orden.muestras if m.estado == "pendiente_preparacion"]
+        listas_para_envio = [m for m in orden.muestras if m.estado == "lista_para_envio"]
+        enviadas = [m for m in orden.muestras if m.estado == "enviada"]
+        con_inconvenientes = [m for m in orden.muestras if m.estado == "con_inconveniente"]
+
+        # Análisis que no cuentan todavía con una muestra asociada
+        analisis_sin_muestra = [d for d in orden.detalles if not d.asociaciones_muestras]
+
+        # Resumen numérico
+        resumen = ResumenEstadoMuestrasRead(
+            total=len(orden.muestras),
+            registradas=len(registradas),
+            pendientes_preparacion=len(pendientes_prep),
+            listas_para_envio=len(listas_para_envio),
+            enviadas=len(enviadas),
+            con_inconvenientes=len(con_inconvenientes),
+        )
+
+        # Determinar si la orden está en condiciones de ser despachada
+        # Condiciones: hay muestras, todos los análisis tienen muestra, ninguna muestra tiene inconveniente
+        # y todas las muestras están listas para envío o ya enviadas.
+        lista_para_despacho = (
+            len(orden.muestras) > 0
+            and len(analisis_sin_muestra) == 0
+            and len(con_inconvenientes) == 0
+            and len(pendientes_prep) == 0
+            and len(registradas) == 0
+        )
+
+        return SeguimientoOrdenMuestrasRead(
+            orden_id=orden.id,
+            estado_orden=orden.estado,
+            paciente_nombre=orden.paciente_nombre,
+            resumen_muestras=resumen,
+            muestras_listas_para_enviar=listas_para_envio,
+            muestras_pendientes_preparacion=pendientes_prep,
+            muestras_con_inconvenientes=con_inconvenientes,
+            analisis_sin_muestra=analisis_sin_muestra,
+            lista_para_despacho=lista_para_despacho,
+        )
+
 
 

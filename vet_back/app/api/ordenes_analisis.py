@@ -6,12 +6,15 @@ from app.schemas.orden_analisis import (
     AsociarMuestraAnalisisCreate,
     ConfigurarCompatibilidadCreate,
     DetalleOrdenAnalisisRead,
+    HistorialMuestraRead,
     HistorialOrdenAnalisisRead,
     MuestraCreate,
+    MuestraEstadoUpdate,
     MuestraRead,
     OrdenAnalisisRead,
     OrdenEstadoUpdate,
     ResultadoAsociacionRead,
+    SeguimientoOrdenMuestrasRead,
     SolicitudAnalisisCreate,
     TipoAnalisisCreate,
     TipoAnalisisRead,
@@ -249,5 +252,45 @@ def list_analisis_pendientes_muestra(
     service: OrdenAnalisisService = Depends(get_service),
 ):
     return service.listar_analisis_pendientes_muestra(orden_id)
+
+
+# --- Estado de Orden y Muestras ---
+
+@router.patch(
+    "/muestras/{muestra_id}/estado",
+    response_model=MuestraRead,
+    summary="US-10: Actualizar el estado de una muestra (registrada, pendiente_preparacion, lista_para_envio, enviada, con_inconveniente)",
+)
+def update_estado_muestra(
+    muestra_id: int,
+    payload: MuestraEstadoUpdate,
+    service: OrdenAnalisisService = Depends(get_service),
+):
+    return service.actualizar_estado_muestra(muestra_id, payload)
+
+
+@router.get(
+    "/muestras/{muestra_id}/historial",
+    response_model=list[HistorialMuestraRead],
+    summary="US-10: Consultar el historial cronológico de cambios de estado de una muestra",
+)
+def get_historial_muestra(
+    muestra_id: int,
+    service: OrdenAnalisisService = Depends(get_service),
+):
+    return service.obtener_historial_muestra(muestra_id)
+
+
+@router.get(
+    "/ordenes-analisis/{orden_id}/seguimiento",
+    response_model=SeguimientoOrdenMuestrasRead,
+    summary="US-10: Consultar el estado consolidado de la orden y sus muestras (listas para enviar vs con inconvenientes)",
+)
+def get_seguimiento_orden_y_muestras(
+    orden_id: int,
+    service: OrdenAnalisisService = Depends(get_service),
+):
+    return service.consultar_estado_orden_y_muestras(orden_id)
+
 
 

@@ -373,3 +373,188 @@ def test_us09_identificar_analisis_pendientes_de_muestra(client, datos_prueba):
     assert pendientes[0]["tipo_analisis"]["nombre"] == "Urocultivo"
 
 
+# ==============================================================================
+# Pruebas para US-10: Consultar estado de la orden y sus muestras
+# ==============================================================================
+
+def test_us10_consultar_estado_orden_y_muestras(client, datos_prueba):
+    """US-10: Consultar el estado consolidado de la orden distinguiendo muestras listas vs con inconvenientes."""
+    # 1. Crear tipo de análisis secundario y orden con 2 análisis
+    res_tipo2 = client.post(
+        "/api/v1/tipos-analisis",
+        json={"nombre": "Glucemia", "descripcion": "Dosaje de glucosa en sangre"},
+    )
+    tipo2_id = res_tipo2.json()["id"]
+
+    res_orden = client.post(
+        "/api/v1/ordenes-analisis",
+        json={
+            "consulta_id": datos_prueba["consulta_id"],
+            "detalles": [
+                {"tipo_analisis_id": datos_prueba["tipo_analisis_id"]},
+                {"tipo_analisis_id": tipo2_id},
+            ],
+        },
+    )
+    orden_id = res_orden.json()["id"]
+    detalles = res_orden.json()["detalles"]
+
+    # 2. Registrar Muestra 1 y pasarla a lista_para_envio
+    res_m1 = client.post(
+        "/api/v1/muestras",
+        json={
+            "codigo_etiqueta": "TUBO-LISTO-01",
+            "orden_id": orden_id,
+            "tipo_muestra_id": datos_prueba["tipo_muestra_id"],
+            "responsable_extraccion": "Dra. Lopez",
+        },
+    )
+    m1_id = res_m1.json()["id"]
+    client.post(
+        f"/api/v1/ordenes-analisis/{orden_id}/asociar-muestra",
+        json={"muestra_id": m1_id, "detalle_ids": [detalles[0]["id"]]},
+    )
+    client.patch(
+        f"/api/v1/muestras/{m1_id}/estado",
+        json={
+            "nuevo_estado": "lista_para_envio",
+            "responsable": "Bioq. Gomez",
+            "motivo": "Acondicionada térmicamente a 4°C",
+        },
+    )
+
+    # 3. Registrar Muestra 2 y marcarla con inconveniente (ej: hemolizada / rota)
+    res_m2 = client.post(
+        "/api/v1/muestras",
+        json={
+            "codigo_etiqueta": "TUBO-PROBLEMA-02",
+            "orden_id": orden_id,
+            "tipo_muestra_id": datos_prueba["tipo_muestra_id"],
+            "responsable_extraccion": "Enfermero Juan",
+        },
+    )
+    m2_id = res_m2.json()["id"]
+    client.post(
+        f"/api/v1/ordenes-analisis/{orden_id}/asociar-muestra",
+        json={"muestra_id": m2_id, "detalle_ids": [detalles[1]["id"]]},
+    )
+    client.patch(
+        f"/api/v1/muestras/{m2_id}/estado",
+        json={
+            "nuevo_estado": "con_inconveniente",
+            "responsable": "Bioq. Gomez",
+            "motivo": "Muestra coagulada, no apta para procesamiento",
+        },
+    )
+
+    # 4. Consultar seguimiento consolidado de la orden
+    res_seg = client.get(f"/api/v1/ordenes-analisis/{orden_id}/seguimiento")
+    assert res_seg.status_code == 200
+    seguimiento = res_seg.json()
+
+    assert seguimiento["orden_id"] == orden_id
+    assert seguimiento["paciente_nombre"] == "Firulais"
+    assert seguimiento["resumen_muestras"]["total"] == 2
+    assert seguimiento["resumen_muestras"]["listas_para_envio"] == 1
+    assert seguimiento["resumen_muestras"]["con_inconvenientes"] == 1
+    assert len(seguimiento["muestras_listas_para_enviar"]) == 1
+    assert seguimiento["muestras_listas_para_enviar"][0]["codigo_etiqueta"] == "TUBO-LISTO-01"
+    assert len(seguimiento["muestras_con_inconvenientes"]) == 1
+    assert seguimiento["muestras_con_inconvenientes"][0]["codigo_etiqueta"] == "TUBO-PROBLEMA-02"
+    assert seguimiento["lista_para_despacho"] is False
+
+
+def test_us10_trazabilidad_cambio_estado_muestra(client, datos_prueba):
+    """US-10: Conservar los cambios de estado de la muestra con fecha, responsable y motivo."""
+    res_orden = client.post(
+        "/api/v1/ordenes-analisis",
+        json={
+            "consulta_id": datos_prueba["consulta_id"],
+            "detalles": [{"tipo_analisis_id": datos_prueba["tipo_analisis_id"]}],
+        },
+    )
+    orden_id = res_orden.json()["id"]
+
+    res_muestra = client.post(
+        "/api/v1/muestras",
+        json={
+            "codigo_etiqueta": "TUBO-TRAZABILIDAD",
+            "orden_id": orden_id,
+            "tipo_muestra_id": datos_prueba["tipo_muestra_id"],
+            "responsable_extraccion": "Dra. Lopez",
+        },
+    )
+    muestra_id = res_muestra.json()["id"]
+
+    # 1. Cambiar a 'pendiente_preparacion'
+    res_p1 = client.patch(
+        f"/api/v1/muestras/{muestra_id}/estado",
+        json={
+            "nuevo_estado": "pendiente_preparacion",
+            "responsable": "Asistente Clara",
+            "motivo": "En espera de centrifugado",
+        },
+    )
+    assert res_p1.status_code == 200
+    assert res_p1.json()["estado"] == "pendiente_preparacion"
+
+    # 2. Cambiar a 'lista_para_envio'
+    res_p2 = client.patch(
+        f"/api/v1/muestras/{muestra_id}/estado",
+        json={
+            "nuevo_estado": "lista_para_envio",
+            "responsable": "Bioq. Gomez",
+            "motivo": "Centrifugado finalizado y rotulada",
+        },
+    )
+    assert res_p2.status_code == 200
+    assert res_p2.json()["estado"] == "lista_para_envio"
+
+    # 3. Consultar historial de la muestra
+    res_hist = client.get(f"/api/v1/muestras/{muestra_id}/historial")
+    assert res_hist.status_code == 200
+    historial = res_hist.json()
+    assert len(historial) == 3
+    assert historial[0]["estado_nuevo"] == "extraida"
+    assert historial[1]["estado_nuevo"] == "pendiente_preparacion"
+    assert historial[1]["responsable"] == "Asistente Clara"
+    assert historial[2]["estado_nuevo"] == "lista_para_envio"
+    assert historial[2]["responsable"] == "Bioq. Gomez"
+
+
+def test_us10_impedir_enviar_muestra_sin_informacion_obligatoria(client, datos_prueba):
+    """US-10: Impedir enviar muestras sin información obligatoria (ej: sin análisis asignado)."""
+    res_orden = client.post(
+        "/api/v1/ordenes-analisis",
+        json={
+            "consulta_id": datos_prueba["consulta_id"],
+            "detalles": [{"tipo_analisis_id": datos_prueba["tipo_analisis_id"]}],
+        },
+    )
+    orden_id = res_orden.json()["id"]
+
+    # Muestra creada pero sin asociar a ningún análisis
+    res_muestra = client.post(
+        "/api/v1/muestras",
+        json={
+            "codigo_etiqueta": "TUBO-SIN-ANALISIS",
+            "orden_id": orden_id,
+            "tipo_muestra_id": datos_prueba["tipo_muestra_id"],
+            "responsable_extraccion": "Dra. Lopez",
+        },
+    )
+    muestra_id = res_muestra.json()["id"]
+
+    # Intentar pasar a 'enviada' sin estar asociada a ningún análisis
+    res_envio = client.patch(
+        f"/api/v1/muestras/{muestra_id}/estado",
+        json={
+            "nuevo_estado": "enviada",
+            "responsable": "Logística",
+        },
+    )
+    assert res_envio.status_code == 400
+    assert "No se permite enviar una muestra que no esté asociada a ningún análisis" in res_envio.json()["detail"]
+
+
+

@@ -81,6 +81,15 @@ class MuestraDAO:
         self.db.flush()
         return historial
 
+    def get_historial(self, muestra_id: int) -> list[HistorialMuestra]:
+        query = (
+            select(HistorialMuestra)
+            .where(HistorialMuestra.muestra_id == muestra_id)
+            .order_by(HistorialMuestra.changed_at.asc())
+        )
+        return list(self.db.scalars(query).all())
+
+
 
 class AsociacionMuestraDAO:
 
