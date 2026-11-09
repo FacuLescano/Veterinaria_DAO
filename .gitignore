@@ -4,3 +4,5 @@ __pycache__/
 .env
 *.db
 vet_back/data/
+.idea/
+.pytest_cache/

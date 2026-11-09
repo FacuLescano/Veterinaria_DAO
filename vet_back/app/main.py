@@ -1,21 +1,27 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
-from app.api.patients import router as enrutador_pacientes
-from app.db.session import ModeloBase, engine
-from app.models import patient  # Registra las entidades en el metadata de SQLAlchemy.
+from app.api.ordenes_analisis import router as ordenes_analisis_router
+from app.api.patients import router as patients_router
+from app.db.session import Base, engine
+from app.models import orden_analisis, patient  # Registra las entidades en el metadata de SQLAlchemy.
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine)
+    yield
+
 
 app = FastAPI(
     title="Sistema de Gestión Veterinaria",
-    description="API de gestión de pacientes y atención veterinaria.",
-    version="0.2.0",
+    description="API de gestión veterinaria: pacientes, atención clínica y órdenes de análisis.",
+    version="0.3.0",
+    lifespan=lifespan,
 )
 
-app.include_router(enrutador_pacientes)
-
-
-@app.on_event("startup")
-def crear_tablas_de_base_de_datos():
-    ModeloBase.metadata.create_all(bind=engine)
+app.include_router(patients_router)
+app.include_router(ordenes_analisis_router)
 
 
 @app.get("/")
