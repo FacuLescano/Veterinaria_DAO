@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.dao.muestra_dao import AsociacionMuestraDAO, MuestraDAO, TipoMuestraDAO
 from app.dao.orden_analisis_dao import OrdenAnalisisDAO
 from app.dao.tipo_analisis_dao import TipoAnalisisDAO
+from app.domain.estados_muestra import TransicionMuestraInvalida
 from app.models.orden_analisis import (
     AsociacionDetalleMuestra,
     DetalleOrdenAnalisis,
@@ -510,20 +511,32 @@ class OrdenAnalisisService:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="No se permite enviar una muestra que no esté asociada a ningún análisis solicitado",
                 )
+            if not muestra.envio:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="El despacho debe registrarse mediante la creación de un envío con remito y precinto",
+                )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El despacho debe registrarse desde la operación de despacho del envío",
+            )
 
-        estado_anterior = muestra.estado
-        muestra.estado = nuevo_estado
-
-        # Registrar trazabilidad en el historial de la muestra
-        evento_historial = HistorialMuestra(
-            muestra_id=muestra.id,
-            estado_anterior=estado_anterior,
-            estado_nuevo=nuevo_estado,
-            changed_at=datetime.now(timezone.utc),
-            motivo=payload.motivo or f"Cambio de estado a {nuevo_estado}",
-            responsable=payload.responsable.strip(),
-        )
-        self.muestra_dao.add_historial(evento_historial)
+        try:
+            muestra.transicionar_a_estado(
+                nuevo_estado,
+                payload.motivo,
+                responsable=payload.responsable,
+            )
+        except TransicionMuestraInvalida as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
 
         self.db.commit()
         self.db.refresh(muestra)
@@ -545,6 +558,7 @@ class OrdenAnalisisService:
         registradas = [m for m in orden.muestras if m.estado == "extraida"]
         pendientes_prep = [m for m in orden.muestras if m.estado == "pendiente_preparacion"]
         listas_para_envio = [m for m in orden.muestras if m.estado == "lista_para_envio"]
+        empaquetadas = [m for m in orden.muestras if m.estado == "empaquetada"]
         enviadas = [m for m in orden.muestras if m.estado == "enviada"]
         con_inconvenientes = [m for m in orden.muestras if m.estado == "con_inconveniente"]
 
@@ -557,19 +571,24 @@ class OrdenAnalisisService:
             registradas=len(registradas),
             pendientes_preparacion=len(pendientes_prep),
             listas_para_envio=len(listas_para_envio),
+            empaquetadas=len(empaquetadas),
             enviadas=len(enviadas),
             con_inconvenientes=len(con_inconvenientes),
         )
 
         # Determinar si la orden está en condiciones de ser despachada
         # Condiciones: hay muestras, todos los análisis tienen muestra, ninguna muestra tiene inconveniente
-        # y todas las muestras están listas para envío o ya enviadas.
+        # y todas las muestras están listas, empaquetadas o ya enviadas.
         lista_para_despacho = (
             len(orden.muestras) > 0
             and len(analisis_sin_muestra) == 0
             and len(con_inconvenientes) == 0
             and len(pendientes_prep) == 0
             and len(registradas) == 0
+            and all(
+                muestra.estado in {"lista_para_envio", "empaquetada", "enviada"}
+                for muestra in orden.muestras
+            )
         )
 
         return SeguimientoOrdenMuestrasRead(

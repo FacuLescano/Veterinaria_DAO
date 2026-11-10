@@ -202,7 +202,7 @@ class OrdenAnalisisRead(BaseModel):
 class MuestraEstadoUpdate(BaseModel):
     nuevo_estado: str = Field(
         ...,
-        description="Nuevo estado de la muestra: extraida, pendiente_preparacion, lista_para_envio, enviada, con_inconveniente",
+        description="Estado operativo de la muestra: extraida, pendiente_preparacion, lista_para_envio o con_inconveniente. El empaquetado y despacho se registran mediante el envío.",
     )
     responsable: str = Field(
         ..., min_length=1, max_length=160, description="Nombre o cargo de quien realiza el cambio de estado"
@@ -217,6 +217,7 @@ class ResumenEstadoMuestrasRead(BaseModel):
     registradas: int
     pendientes_preparacion: int
     listas_para_envio: int
+    empaquetadas: int = 0
     enviadas: int
     con_inconvenientes: int
 

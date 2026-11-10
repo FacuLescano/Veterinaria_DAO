@@ -12,7 +12,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from app.db.session import Base, get_db
 from app.main import app
 from app.models.orden_analisis import TipoAnalisis, TipoMuestra
-from app.models.patient import Consultation, Pet, Responsible, Veterinarian
+from app.models.patient import (
+    Consulta as Consultation,
+    Mascota as Pet,
+    Responsable as Responsible,
+    Veterinario as Veterinarian,
+)
 
 # Base de datos en memoria para no modificar veterinaria.db
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
