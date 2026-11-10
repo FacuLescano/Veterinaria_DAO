@@ -4,8 +4,7 @@ from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Table, Tex
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
-from app.models.patient import Consultation, Veterinarian
-
+from app.models.patient import Consulta, Veterinario
 
 # Tabla asociativa para definir tipos de muestra compatibles con cada tipo de análisis (US-09)
 tipo_analisis_tipos_muestra = Table(
@@ -44,8 +43,8 @@ class OrdenAnalisis(Base):
     )
 
     # Relaciones de dominio
-    consulta: Mapped[Consultation] = relationship()
-    veterinario: Mapped[Veterinarian] = relationship()
+    consulta: Mapped[Consulta] = relationship()
+    veterinario: Mapped[Veterinario] = relationship()
     detalles: Mapped[list["DetalleOrdenAnalisis"]] = relationship(
         back_populates="orden", cascade="all, delete-orphan"
     )
