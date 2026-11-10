@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from sqlalchemy.orm import object_session
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Table, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -168,16 +169,35 @@ class Muestra(Base):
         nuevo_estado = metodo(self, *argumentos)
         self.estado = nuevo_estado.codigo_persistido
         self._estado_actual = nuevo_estado
+        ocurrido_en = fecha_evento or datetime.now(timezone.utc)
         self.historial.append(
             HistorialMuestra(
                 muestra_id=self.id,
                 estado_anterior=estado_anterior,
                 estado_nuevo=self.estado,
-                changed_at=fecha_evento or datetime.now(timezone.utc),
+                changed_at=ocurrido_en,
                 motivo=motivo or f"Transición a {nuevo_estado.nombre}",
                 responsable=responsable.strip() or "Sistema",
             )
         )
+        sesion = object_session(self)
+        if sesion is not None:
+            from app.observers.muestra import CambioEstadoMuestra, publicar_cambio_estado
+
+            orden = self.orden
+            publicar_cambio_estado(
+                CambioEstadoMuestra(
+                    muestra_id=self.id,
+                    codigo_etiqueta=self.codigo_etiqueta,
+                    orden_id=self.orden_id,
+                    veterinario_id=orden.veterinario_id,
+                    estado_anterior=estado_anterior,
+                    estado_nuevo=self.estado,
+                    ocurrido_en=ocurrido_en,
+                    motivo=motivo,
+                ),
+                sesion,
+            )
         return estado_anterior, self.estado
 
     def iniciar_preparacion(

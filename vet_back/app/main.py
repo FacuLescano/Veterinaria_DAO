@@ -12,6 +12,10 @@ from app.db.session import Base, engine
 from app.db.recepcion import inicializar_base as inicializar_base_recepcion
 from app.models import envio  # Registra las entidades de despacho en el metadata.
 from app.models import orden_analisis, patient  # Registra las entidades en el metadata de SQLAlchemy.
+from app.models import notificacion  # Registra la bandeja de notificaciones del veterinario.
+from app.observers.muestra import NotificarVeterinario, estado_muestra
+
+estado_muestra.suscribir(NotificarVeterinario())
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -32,17 +36,13 @@ app = FastAPI(
     title="Sistema de Gestión Veterinaria",
     description="API de gestión veterinaria: pacientes, atención clínica y órdenes de análisis.",
     version="0.3.0",
+    lifespan=lifespan,
 )
 
-app.include_router(enrutador_pacientes)
+app.include_router(patients_router)
 app.include_router(ordenes_analisis_router)
 app.include_router(envios_router)
 app.include_router(recepcion_router, prefix="/api/v1")
-
-@app.on_event("startup")
-def crear_tablas_de_base_de_datos():
-    ModeloBase.metadata.create_all(bind=engine)
-
 
 @app.get("/")
 def inicio():

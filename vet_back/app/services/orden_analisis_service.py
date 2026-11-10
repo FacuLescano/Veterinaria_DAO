@@ -370,6 +370,22 @@ class OrdenAnalisisService:
         )
         self.muestra_dao.add_historial(evento_historial)
 
+        from app.observers.muestra import CambioEstadoMuestra, publicar_cambio_estado
+
+        publicar_cambio_estado(
+            CambioEstadoMuestra(
+                muestra_id=muestra.id,
+                codigo_etiqueta=muestra.codigo_etiqueta,
+                orden_id=orden.id,
+                veterinario_id=orden.veterinario_id,
+                estado_anterior=None,
+                estado_nuevo=muestra.estado,
+                ocurrido_en=fecha_extraccion,
+                motivo="Extracción de muestra registrada",
+            ),
+            self.db,
+        )
+
         self.db.commit()
         return self.obtener_muestra_por_id(muestra.id)
 

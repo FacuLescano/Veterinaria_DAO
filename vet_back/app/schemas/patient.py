@@ -51,6 +51,19 @@ class LecturaVeterinario(ModeloORM):
     active: bool
 
 
+class LecturaNotificacionVeterinario(ModeloORM):
+    id: int
+    veterinario_id: int
+    muestra_id: int
+    estado_anterior: str | None
+    estado_nuevo: str
+    mensaje: str
+    motivo: str | None
+    ocurrido_en: datetime
+    creada_en: datetime
+    leida_en: datetime | None
+
+
 class CrearMascota(BaseModel):
     responsible_id: int
     name: str = Field(min_length=1, max_length=100)

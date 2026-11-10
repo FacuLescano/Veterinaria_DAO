@@ -1,6 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import obtener_sesion_bd
@@ -10,7 +11,10 @@ from app.schemas.patient import (
     CrearResponsable, CrearTurno, CrearVeterinario, LecturaConsulta,
     LecturaHistorialResponsablesMascota, LecturaHistorialTurno, LecturaMascota,
     LecturaResponsable, LecturaTurno, LecturaVeterinario,
+    LecturaNotificacionVeterinario,
 )
+from app.models.notificacion import NotificacionVeterinario
+from app.models.patient import Veterinario
 from app.services.patient_service import PatientService
 
 router = APIRouter(prefix="/api/v1", tags=["Pacientes y atención"])
@@ -47,6 +51,42 @@ def listar_veterinarios(service: PatientService = Depends(get_service)):
 @router.patch("/veterinarios/{veterinarian_id}", response_model=LecturaVeterinario)
 def actualizar_veterinario(veterinarian_id: int, payload: ActualizarVeterinario, service: PatientService = Depends(get_service)):
     return service.actualizar_veterinario(veterinarian_id, payload)
+
+@router.get(
+    "/veterinarios/{veterinarian_id}/notificaciones",
+    response_model=list[LecturaNotificacionVeterinario],
+)
+def listar_notificaciones_veterinario(
+    veterinarian_id: int,
+    solo_no_leidas: bool = False,
+    db: Session = Depends(obtener_sesion_bd),
+):
+    if db.get(Veterinario, veterinarian_id) is None:
+        raise HTTPException(status_code=404, detail="Veterinario no encontrado")
+    consulta = select(NotificacionVeterinario).where(
+        NotificacionVeterinario.veterinario_id == veterinarian_id
+    )
+    if solo_no_leidas:
+        consulta = consulta.where(NotificacionVeterinario.leida_en.is_(None))
+    return db.scalars(consulta.order_by(NotificacionVeterinario.creada_en.desc())).all()
+
+@router.patch(
+    "/veterinarios/{veterinarian_id}/notificaciones/{notificacion_id}/leida",
+    response_model=LecturaNotificacionVeterinario,
+)
+def marcar_notificacion_leida(
+    veterinarian_id: int,
+    notificacion_id: int,
+    db: Session = Depends(obtener_sesion_bd),
+):
+    notificacion = db.get(NotificacionVeterinario, notificacion_id)
+    if notificacion is None or notificacion.veterinario_id != veterinarian_id:
+        raise HTTPException(status_code=404, detail="Notificación no encontrada")
+    if notificacion.leida_en is None:
+        notificacion.leida_en = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(notificacion)
+    return notificacion
 
 @router.post("/mascotas", response_model=LecturaMascota, status_code=status.HTTP_201_CREATED)
 def crear_mascota(payload: CrearMascota, service: PatientService = Depends(get_service)):
