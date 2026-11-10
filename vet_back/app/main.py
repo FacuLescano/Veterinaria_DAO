@@ -6,12 +6,14 @@ from app.api.patients import router as patients_router
 from app.db.session import Base, engine
 from app.models import orden_analisis, patient  # Registra las entidades en el metadata de SQLAlchemy.
 
+from app.api.modulo4 import enrutador as enrutador_modulo4
+from app.db.modulo4 import inicializar_base
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     yield
-
 
 app = FastAPI(
     title="Sistema de Gestión Veterinaria",
@@ -22,6 +24,13 @@ app = FastAPI(
 
 app.include_router(patients_router)
 app.include_router(ordenes_analisis_router)
+
+
+@app.on_event("startup")
+def iniciar_persistencia_modulo4():
+    inicializar_base()
+
+app.include_router(enrutador_modulo4, prefix="/api/modulo4")
 
 
 @app.on_event("startup")
