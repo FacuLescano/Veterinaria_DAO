@@ -1,6 +1,6 @@
 # Módulo 4: recepción, incidencias y resultados
 
-El paquete funciona de forma independiente y se monta desde `app.main` en `/api/modulo4`. Mantiene tablas propias (`m4_*`) y referencias externas por identificador; no declara ni modifica envíos, muestras, órdenes, detalles de orden o pacientes que pertenecen a otros módulos.
+El paquete funciona de forma independiente y se monta desde `app.main` bajo `/api/v1`. Mantiene tablas propias (`m4_*`) y referencias externas por identificador; no declara ni modifica envíos, muestras, órdenes, detalles de orden o pacientes que pertenecen a otros módulos.
 
 ## Contrato con el módulo 3
 
@@ -12,11 +12,11 @@ Las recepciones comparan el contenido efectivo con la lista despachada del remit
 
 ## Endpoints
 
-- `GET /api/modulo4/envios-pendientes`
-- `POST /api/modulo4/recepciones`, `GET /api/modulo4/recepciones/{id}`
-- `POST /api/modulo4/verificaciones-precinto`, `GET /api/modulo4/verificaciones-precinto?envio_id=...`
-- `POST /api/modulo4/incidencias`, `GET /api/modulo4/incidencias`, `POST /api/modulo4/incidencias/{id}/resolver`
-- `POST /api/modulo4/resultados`, `GET /api/modulo4/resultados`, `PATCH /api/modulo4/resultados/{id}/estado`, `PATCH /api/modulo4/resultados/{id}/interpretacion`
+- `GET /api/v1/envios-pendientes`
+- `POST /api/v1/recepciones`, `GET /api/v1/recepciones/{id}`
+- `POST /api/v1/verificaciones-precinto`, `GET /api/v1/verificaciones-precinto?envio_id=...`
+- `POST /api/v1/incidencias`, `GET /api/v1/incidencias`, `POST /api/v1/incidencias/{id}/resolver`
+- `POST /api/v1/resultados`, `GET /api/v1/resultados`, `PATCH /api/v1/resultados/{id}/estado`, `PATCH /api/v1/resultados/{id}/interpretacion`
 
 Las anomalías de contenido y precinto crean incidencias con trazabilidad. La carga de informes recibe `informe_uri` y nombre como metadatos; el almacenamiento binario y la autorización del archivo corresponden a la infraestructura común del proyecto.
 

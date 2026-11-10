@@ -2,15 +2,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from vet_back.app.db.recepcion import obtener_sesion
-from vet_back.app.schemas.recepcion import (
+from app.db.recepcion import obtener_sesion
+from app.schemas.recepcion import (
     CambioEstadoResultadoEntrada, IncidenciaEntrada, InterpretacionEntrada,
     RecepcionEntrada, ResolucionIncidenciaEntrada, ResultadoEntrada,
     VerificacionPrecintoEntrada,
 )
-from vet_back.app.models.recepcion import Incidencia, RecepcionEnvio, ResultadoAnalisis, VerificacionPrecinto
-from vet_back.app.services import recepcion as servicios
-from vet_back.app.core.recepcion_integracion import listar_envios_despachados
+from app.models.recepcion import Incidencia, RecepcionEnvio, ResultadoAnalisis, VerificacionPrecinto
+from app.services import recepcion as servicios
+from app.core.recepcion_integracion import listar_envios_despachados
 
 enrutador = APIRouter(tags=["Módulo 4: recepción y resultados"])
 

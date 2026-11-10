@@ -4,7 +4,7 @@ from uuid import uuid4
 from sqlalchemy import DateTime, ForeignKey, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from vet_back.app.db.recepcion import BaseModulo4
+from app.db.recepcion import BaseModulo4
 
 
 def ahora_utc():

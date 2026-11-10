@@ -1,17 +1,17 @@
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from sqlalchemy import inspect, text
 
 from app.api.ordenes_analisis import router as ordenes_analisis_router
 from app.api.envios import router as envios_router
 from app.api.patients import router as patients_router
+from app.api.recepcion import enrutador as recepcion_router
 from app.db.session import Base, engine
+from app.db.recepcion import inicializar_base as inicializar_base_recepcion
 from app.models import envio  # Registra las entidades de despacho en el metadata.
 from app.models import orden_analisis, patient  # Registra las entidades en el metadata de SQLAlchemy.
-
-from app.api.modulo4 import enrutador as enrutador_modulo4
-from app.db.modulo4 import inicializar_base
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -25,6 +25,7 @@ async def lifespan(app: FastAPI):
                     "VARCHAR(500) NOT NULL DEFAULT 'Sin especificar (registro previo)'"
                 )
             )
+    inicializar_base_recepcion()
     yield
 
 app = FastAPI(
@@ -37,18 +38,7 @@ app = FastAPI(
 app.include_router(patients_router)
 app.include_router(ordenes_analisis_router)
 app.include_router(envios_router)
-
-
-@app.on_event("startup")
-def iniciar_persistencia_modulo4():
-    inicializar_base()
-
-app.include_router(enrutador_modulo4, prefix="/api/modulo4")
-
-
-@app.on_event("startup")
-def iniciar_persistencia_modulo4():
-    inicializar_base()
+app.include_router(recepcion_router, prefix="/api/v1")
 
 @app.get("/")
 def inicio():
