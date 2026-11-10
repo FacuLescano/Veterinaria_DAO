@@ -3,10 +3,10 @@ from datetime import date, datetime
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.session import ModeloBase
+from app.db.session import Base
 
 
-class Responsable(ModeloBase):
+class Responsable(Base):
     __tablename__ = "responsables"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -18,7 +18,7 @@ class Responsable(ModeloBase):
     pets: Mapped[list["Mascota"]] = relationship(back_populates="responsible")
 
 
-class Veterinario(ModeloBase):
+class Veterinario(Base):
     __tablename__ = "veterinarios"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -30,7 +30,7 @@ class Veterinario(ModeloBase):
     consultations: Mapped[list["Consulta"]] = relationship(back_populates="veterinarian")
 
 
-class Mascota(ModeloBase):
+class Mascota(Base):
     __tablename__ = "mascotas"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -49,7 +49,7 @@ class Mascota(ModeloBase):
     consultations: Mapped[list["Consulta"]] = relationship(back_populates="pet")
 
 
-class HistorialResponsableMascota(ModeloBase):
+class HistorialResponsableMascota(Base):
     __tablename__ = "historial_responsables_mascota"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -59,7 +59,7 @@ class HistorialResponsableMascota(ModeloBase):
     pet: Mapped[Mascota] = relationship(back_populates="ownership_history")
 
 
-class Turno(ModeloBase):
+class Turno(Base):
     __tablename__ = "turnos"
     __table_args__ = (UniqueConstraint("veterinarian_id", "scheduled_at", name="uq_vet_turno_horario"),)
 
@@ -79,7 +79,7 @@ class Turno(ModeloBase):
     )
 
 
-class HistorialTurno(ModeloBase):
+class HistorialTurno(Base):
     __tablename__ = "historial_turnos"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -94,7 +94,7 @@ class HistorialTurno(ModeloBase):
     appointment: Mapped[Turno] = relationship(back_populates="history")
 
 
-class Consulta(ModeloBase):
+class Consulta(Base):
     __tablename__ = "consultas_medicas"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)

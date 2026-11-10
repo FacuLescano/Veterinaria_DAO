@@ -4,8 +4,8 @@ from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Table, Tex
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
-from app.models.patient import Consultation, Veterinarian
-
+from app.domain.estados_muestra import EstadoMuestra, TransicionMuestraInvalida, crear_estado_muestra
+from app.models.patient import Consulta, Veterinario
 
 # Tabla asociativa para definir tipos de muestra compatibles con cada tipo de análisis (US-09)
 tipo_analisis_tipos_muestra = Table(
@@ -44,8 +44,8 @@ class OrdenAnalisis(Base):
     )
 
     # Relaciones de dominio
-    consulta: Mapped[Consultation] = relationship()
-    veterinario: Mapped[Veterinarian] = relationship()
+    consulta: Mapped[Consulta] = relationship()
+    veterinario: Mapped[Veterinario] = relationship()
     detalles: Mapped[list["DetalleOrdenAnalisis"]] = relationship(
         back_populates="orden", cascade="all, delete-orphan"
     )
@@ -142,6 +142,163 @@ class Muestra(Base):
     asociaciones_detalles: Mapped[list["AsociacionDetalleMuestra"]] = relationship(
         back_populates="muestra", cascade="all, delete-orphan"
     )
+    envio: Mapped["Envio | None"] = relationship(
+        "Envio", secondary="envio_muestras", back_populates="muestras", uselist=False
+    )
+
+    @property
+    def estado_actual(self) -> EstadoMuestra:
+        """Objeto State reconstruido desde el código persistido en `estado`."""
+        estado_cacheado = getattr(self, "_estado_actual", None)
+        if estado_cacheado is None or estado_cacheado.codigo_persistido != self.estado:
+            estado_cacheado = crear_estado_muestra(self.estado)
+            self._estado_actual = estado_cacheado
+        return estado_cacheado
+
+    def _ejecutar_transicion(
+        self,
+        operacion: str,
+        *argumentos,
+        responsable: str = "Sistema",
+        motivo: str | None = None,
+        fecha_evento: datetime | None = None,
+    ) -> tuple[str, str]:
+        estado_anterior = self.estado
+        metodo = getattr(self.estado_actual, operacion)
+        nuevo_estado = metodo(self, *argumentos)
+        self.estado = nuevo_estado.codigo_persistido
+        self._estado_actual = nuevo_estado
+        self.historial.append(
+            HistorialMuestra(
+                muestra_id=self.id,
+                estado_anterior=estado_anterior,
+                estado_nuevo=self.estado,
+                changed_at=fecha_evento or datetime.now(timezone.utc),
+                motivo=motivo or f"Transición a {nuevo_estado.nombre}",
+                responsable=responsable.strip() or "Sistema",
+            )
+        )
+        return estado_anterior, self.estado
+
+    def iniciar_preparacion(
+        self, motivo: str | None = None, *, responsable: str = "Sistema"
+    ) -> tuple[str, str]:
+        return self._ejecutar_transicion(
+            "iniciar_preparacion", motivo, responsable=responsable, motivo=motivo
+        )
+
+    def marcar_lista_para_envio(
+        self, motivo: str | None = None, *, responsable: str = "Sistema"
+    ) -> tuple[str, str]:
+        return self._ejecutar_transicion(
+            "marcar_lista_para_envio", motivo, responsable=responsable, motivo=motivo
+        )
+
+    def empaquetar(
+        self,
+        *,
+        responsable: str = "Sistema",
+        motivo: str | None = None,
+        fecha_evento: datetime | None = None,
+    ) -> tuple[str, str]:
+        return self._ejecutar_transicion(
+            "empaquetar",
+            responsable=responsable,
+            motivo=motivo,
+            fecha_evento=fecha_evento,
+        )
+
+    def despachar(
+        self,
+        *,
+        responsable: str = "Sistema",
+        motivo: str | None = None,
+        fecha_evento: datetime | None = None,
+    ) -> tuple[str, str]:
+        return self._ejecutar_transicion(
+            "despachar",
+            responsable=responsable,
+            motivo=motivo,
+            fecha_evento=fecha_evento,
+        )
+
+    def recibir(
+        self,
+        *,
+        responsable: str = "Sistema",
+        motivo: str | None = None,
+        fecha_evento: datetime | None = None,
+    ) -> tuple[str, str]:
+        return self._ejecutar_transicion(
+            "recibir",
+            responsable=responsable,
+            motivo=motivo,
+            fecha_evento=fecha_evento,
+        )
+
+    def registrar_analisis(
+        self,
+        referencia_resultado: str,
+        *,
+        responsable: str = "Sistema",
+        motivo: str | None = None,
+        fecha_evento: datetime | None = None,
+    ) -> tuple[str, str]:
+        return self._ejecutar_transicion(
+            "registrar_analisis",
+            referencia_resultado,
+            responsable=responsable,
+            motivo=motivo or f"Resultado recibido: {referencia_resultado}",
+            fecha_evento=fecha_evento,
+        )
+
+    def rechazar(
+        self,
+        motivo: str,
+        *,
+        responsable: str = "Sistema",
+        fecha_evento: datetime | None = None,
+    ) -> tuple[str, str]:
+        return self._ejecutar_transicion(
+            "rechazar",
+            motivo,
+            responsable=responsable,
+            motivo=motivo,
+            fecha_evento=fecha_evento,
+        )
+
+    def reportar_inconveniente(
+        self, motivo: str | None = None, *, responsable: str = "Sistema"
+    ) -> tuple[str, str]:
+        return self._ejecutar_transicion(
+            "reportar_inconveniente", motivo, responsable=responsable, motivo=motivo
+        )
+
+    def transicionar_a_estado(
+        self,
+        nuevo_estado: str,
+        motivo: str | None = None,
+        *,
+        responsable: str = "Sistema",
+    ) -> tuple[str, str]:
+        """Adaptador temporal para el endpoint PATCH legacy de estados."""
+        operaciones_legacy = {
+            "pendiente_preparacion": "iniciar_preparacion",
+            "lista_para_envio": "marcar_lista_para_envio",
+            "enviada": "despachar",
+            "con_inconveniente": "reportar_inconveniente",
+        }
+        operacion = operaciones_legacy.get(nuevo_estado)
+        if operacion is None:
+            raise TransicionMuestraInvalida(
+                f"El endpoint de estado manual no admite '{nuevo_estado}'; use la operación del ciclo de vida"
+            )
+        return self._ejecutar_transicion(
+            operacion,
+            motivo,
+            responsable=responsable,
+            motivo=motivo,
+        )
 
 
 class HistorialMuestra(Base):

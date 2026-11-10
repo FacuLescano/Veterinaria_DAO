@@ -353,7 +353,7 @@ Se deberá preservar el historial de estados de las muestras para permitir su se
 
 ## 12. Estado del proyecto
 
-El backend incluye el módulo 1 de pacientes y atención veterinaria. Los módulos de órdenes y muestras, despacho, recepción y resultados, además de la interfaz de usuario, quedan para las siguientes etapas.
+El backend incluye el módulo 1 de pacientes y atención veterinaria, el módulo 2 de órdenes y muestras y el módulo 3 de preparación, despacho y trazabilidad de envíos. La recepción informada y los resultados externos corresponden al módulo 4; la operación interna del laboratorio queda fuera del alcance.
 
 Este README se actualizará conforme se incorporen nuevas funcionalidades, configuraciones y procedimientos de instalación.
 
@@ -372,3 +372,44 @@ Rutas principales:
 - `GET /api/v1/mascotas/{id}/historia-clinica`: consultas históricas del paciente.
 
 La API valida relaciones e identificadores y devuelve `404` para entidades inexistentes y `409` para duplicados o conflictos de agenda. Los contratos completos están disponibles en `/docs`. Esta entrega cubre la API; la tecnología de `vet_front` aún está pendiente de definición.
+
+## Módulo 3: preparación, despacho y trazabilidad del envío
+
+El módulo registra conservadoras, prepara los envíos agrupando muestras en cada conservadora, registra los precintos sanitarios y separa la preparación del despacho efectivo. Solo se preparan muestras en estado `lista_para_envio`, asociadas a análisis y con identificación y condiciones de conservación registradas. Una muestra no puede incluirse en más de un envío.
+
+Flujo de API:
+
+- `POST/GET /api/v1/conservadoras`: registrar y consultar conservadoras.
+- `POST /api/v1/envios`: iniciar un envío en estado `en_preparacion` y asignar las muestras a conservadoras.
+- `POST /api/v1/envios/{id}/precintos`: registrar código, conservadora, responsable y fecha de colocación.
+- `POST /api/v1/envios/{id}/verificaciones-precinto`: guardar verificaciones `integro`, `roto`, `ausente` o `codigo_no_coincide`; anomalías también generan incidencias y bloquean el despacho hasta que se registre una verificación íntegra más reciente.
+- `POST /api/v1/envios/{id}/despachar`: verificar que cada conservadora tenga precinto, registrar responsable y transportista, emitir el remito y pasar muestras y envío a `enviada` y `despachado` respectivamente.
+- `GET /api/v1/envios`, `GET /api/v1/envios/{id}`: consultar el envío, su contenido, precintos e historial.
+- `GET /api/v1/envios/{id}/remito`: consultar la copia histórica del remito generado al despachar.
+- `GET /api/v1/envios/{id}/remito/impresion`: abrir una versión imprimible del remito desde el navegador.
+- `POST /api/v1/envios/{id}/temperaturas`: registrar temperatura requerida y medida, fecha, responsable y dispositivo.
+- `POST /api/v1/envios/{id}/incidencias`: registrar anomalías asociadas al envío, a una conservadora o a una muestra.
+
+Ejemplo para preparar un envío:
+
+```json
+{
+  "origen": "Clínica Centro",
+  "destino": "Laboratorio externo",
+  "condiciones_empaquetado": "Muestras protegidas en bolsa biosegura y refrigeradas",
+  "conservadoras": [
+    { "conservadora_id": 1, "muestra_ids": [4, 5] }
+  ],
+  "observaciones": "Mantener refrigerado"
+}
+```
+
+El remito guarda una instantánea del contenido despachado, incluidas las condiciones de empaquetado. Las verificaciones de precinto del módulo 3 documentan la preparación y la salida; la recepción informada y la verificación a la llegada pertenecen al módulo 4.
+
+### State en el ciclo de vida de `Muestra`
+
+El patrón se implementa en `vet_back/app/domain/estados_muestra.py`: `EstadoMuestra` es la clase abstracta y cada estado concreto decide qué operaciones admite. La entidad ORM `Muestra` funciona como contexto, obtiene el objeto State desde el código persistido y delega las operaciones de preparación, empaquetado, despacho, recepción, análisis y rechazo.
+
+El campo `muestras.estado` se conserva como código persistido. El código histórico `enviada` se interpreta como `EstadoEnTransito` para mantener compatibilidad con los clientes existentes. Al crear un envío, las muestras pasan a `empaquetada`; al despacharlo, pasan a `enviada` (En tránsito). Cada transición persiste un registro en `historial_muestras` junto con el cambio del estado actual.
+
+`EnvioService` coordina las reglas del envío y la transacción; los objetos de estado no acceden a la base ni a HTTP. Las operaciones de recepción, análisis y rechazo quedan disponibles en el dominio para integrarse desde el módulo 4.
