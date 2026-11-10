@@ -3,8 +3,15 @@ from datetime import datetime, timezone
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Table, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.session import Base
-from app.models.patient import Consultation, Veterinarian
+try:
+    from app.db.session import ModeloBase as Base
+except ImportError:
+    from app.db.session import Base
+
+try:
+    from app.models.patient import Consulta, Veterinario
+except ImportError:
+    from app.models.patient import Consultation as Consulta, Veterinarian as Veterinario
 
 
 # Tabla asociativa para definir tipos de muestra compatibles con cada tipo de análisis (US-09)
@@ -44,8 +51,8 @@ class OrdenAnalisis(Base):
     )
 
     # Relaciones de dominio
-    consulta: Mapped[Consultation] = relationship()
-    veterinario: Mapped[Veterinarian] = relationship()
+    consulta: Mapped[Consulta] = relationship()
+    veterinario: Mapped[Veterinario] = relationship()
     detalles: Mapped[list["DetalleOrdenAnalisis"]] = relationship(
         back_populates="orden", cascade="all, delete-orphan"
     )

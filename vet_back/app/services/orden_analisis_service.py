@@ -15,7 +15,10 @@ from app.models.orden_analisis import (
     TipoAnalisis,
     TipoMuestra,
 )
-from app.models.patient import Consultation, Veterinarian
+try:
+    from app.models.patient import Consulta, Veterinario
+except ImportError:
+    from app.models.patient import Consultation as Consulta, Veterinarian as Veterinario
 from app.schemas.orden_analisis import (
     AsociarMuestraAnalisisCreate,
     ConfigurarCompatibilidadCreate,
@@ -125,7 +128,7 @@ class OrdenAnalisisService:
         Registra la orden con sus detalles y genera el primer evento en el historial.
         """
         # 1. Validar que la consulta médica exista
-        consulta = self.db.get(Consultation, payload.consulta_id)
+        consulta = self.db.get(Consulta, payload.consulta_id)
         if not consulta:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -134,7 +137,7 @@ class OrdenAnalisisService:
 
         # 2. Identificar y validar al veterinario solicitante
         veterinario_id = payload.veterinario_id or consulta.veterinarian_id
-        veterinario = self.db.get(Veterinarian, veterinario_id)
+        veterinario = self.db.get(Veterinario, veterinario_id)
         if not veterinario:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

@@ -7,7 +7,10 @@ from app.models.orden_analisis import (
     Muestra,
     OrdenAnalisis,
 )
-from app.models.patient import Consultation
+try:
+    from app.models.patient import Consulta
+except ImportError:
+    from app.models.patient import Consultation as Consulta
 
 
 class OrdenAnalisisDAO:
@@ -22,7 +25,7 @@ class OrdenAnalisisDAO:
             selectinload(OrdenAnalisis.detalles).selectinload(DetalleOrdenAnalisis.asociaciones_muestras),
             selectinload(OrdenAnalisis.muestras).selectinload(Muestra.tipo_muestra),
             selectinload(OrdenAnalisis.muestras).selectinload(Muestra.historial),
-            selectinload(OrdenAnalisis.consulta).selectinload(Consultation.pet),
+            selectinload(OrdenAnalisis.consulta).selectinload(Consulta.pet),
             selectinload(OrdenAnalisis.veterinario),
             selectinload(OrdenAnalisis.historial),
         ]

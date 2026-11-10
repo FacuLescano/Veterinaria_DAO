@@ -9,10 +9,23 @@ from sqlalchemy.pool import StaticPool
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.db.session import Base, get_db
+try:
+    from app.db.session import ModeloBase, obtener_sesion_bd
+except ImportError:
+    from app.db.session import Base as ModeloBase, get_db as obtener_sesion_bd
+
 from app.main import app
 from app.models.orden_analisis import TipoAnalisis, TipoMuestra
-from app.models.patient import Consultation, Pet, Responsible, Veterinarian
+
+try:
+    from app.models.patient import Consulta, Mascota, Responsable, Veterinario
+except ImportError:
+    from app.models.patient import (
+        Consultation as Consulta,
+        Pet as Mascota,
+        Responsible as Responsable,
+        Veterinarian as Veterinario,
+    )
 
 # Base de datos en memoria para no modificar veterinaria.db
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -28,9 +41,9 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 @pytest.fixture(autouse=True)
 def setup_database():
     """Crea las tablas antes de cada test y las limpia al terminar."""
-    Base.metadata.create_all(bind=engine)
+    ModeloBase.metadata.create_all(bind=engine)
     yield
-    Base.metadata.drop_all(bind=engine)
+    ModeloBase.metadata.drop_all(bind=engine)
 
 
 @pytest.fixture
@@ -43,7 +56,7 @@ def client():
         finally:
             db.close()
 
-    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[obtener_sesion_bd] = override_get_db
     yield TestClient(app)
     app.dependency_overrides.clear()
 
@@ -53,7 +66,7 @@ def datos_prueba():
     """Crea datos mínimos de prueba: 1 responsable, 1 veterinario, 1 mascota, 1 consulta y 1 tipo de análisis."""
     db = TestingSessionLocal()
     try:
-        resp = Responsible(
+        resp = Responsable(
             document_number="12345678",
             full_name="Juan Perez",
             phone="1122334455",
@@ -61,7 +74,7 @@ def datos_prueba():
         db.add(resp)
         db.flush()
 
-        vet = Veterinarian(
+        vet = Veterinario(
             full_name="Dra. Lopez",
             license_number="MP-9988",
             active=True,
@@ -69,7 +82,7 @@ def datos_prueba():
         db.add(vet)
         db.flush()
 
-        pet = Pet(
+        pet = Mascota(
             responsible_id=resp.id,
             name="Firulais",
             species="Canino",
@@ -77,7 +90,7 @@ def datos_prueba():
         db.add(pet)
         db.flush()
 
-        consulta = Consultation(
+        consulta = Consulta(
             pet_id=pet.id,
             veterinarian_id=vet.id,
             reason="Control general",
@@ -109,4 +122,3 @@ def datos_prueba():
         }
     finally:
         db.close()
-

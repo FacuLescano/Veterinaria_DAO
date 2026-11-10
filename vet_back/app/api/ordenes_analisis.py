@@ -1,7 +1,10 @@
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.db.session import get_db
+try:
+    from app.db.session import obtener_sesion_bd
+except ImportError:
+    from app.db.session import get_db as obtener_sesion_bd
 from app.schemas.orden_analisis import (
     AsociarMuestraAnalisisCreate,
     ConfigurarCompatibilidadCreate,
@@ -26,7 +29,7 @@ from app.services.orden_analisis_service import OrdenAnalisisService
 router = APIRouter(prefix="/api/v1", tags=["Órdenes y análisis"])
 
 
-def get_service(db: Session = Depends(get_db)) -> OrdenAnalisisService:
+def get_service(db: Session = Depends(obtener_sesion_bd)) -> OrdenAnalisisService:
     return OrdenAnalisisService(db)
 
 
