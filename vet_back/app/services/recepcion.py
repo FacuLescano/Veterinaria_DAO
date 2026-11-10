@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.modulo4 import Incidencia, RecepcionEnvio, ResultadoAnalisis, VerificacionPrecinto
+from vet_back.app.models.recepcion import Incidencia, RecepcionEnvio, ResultadoAnalisis, VerificacionPrecinto
 
 
 def registrar_recepcion(sesion: Session, datos):

@@ -32,6 +32,6 @@ def obtener_sesion():
 
 
 def inicializar_base():
-    from app.models import modulo4  # Registra las tablas antes de crear el esquema.
+    from vet_back.app.models import recepcion  # Registra las tablas antes de crear el esquema.
 
     BaseModulo4.metadata.create_all(bind=motor)
