@@ -1,4 +1,4 @@
-from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app.api.ordenes_analisis import router as ordenes_analisis_router
@@ -23,6 +23,10 @@ app = FastAPI(
 app.include_router(patients_router)
 app.include_router(ordenes_analisis_router)
 
+
+@app.on_event("startup")
+def iniciar_persistencia_modulo4():
+    inicializar_base()
 
 @app.get("/")
 def inicio():
