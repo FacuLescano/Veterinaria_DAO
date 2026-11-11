@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -41,6 +41,9 @@ class Mascota(Base):
     sex: Mapped[str | None] = mapped_column(String(30), nullable=True)
     birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    microchip: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    photo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     responsible: Mapped[Responsable] = relationship(back_populates="pets")
     ownership_history: Mapped[list["HistorialResponsableMascota"]] = relationship(
         back_populates="pet", cascade="all, delete-orphan", order_by="HistorialResponsableMascota.changed_at"

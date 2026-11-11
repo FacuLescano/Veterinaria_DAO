@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useVeterinaria } from '../../context/VeterinariaContext';
 import { Mascota, Responsable, Turno, ConsultaMedica, Especie, SexoMascota } from '../../types/veterinaria';
 import { Modal } from '../common/Modal';
@@ -35,6 +35,7 @@ export const Modulo1Pacientes: React.FC = () => {
     updateTurnoEstado,
     addConsulta,
     createOrden,
+    showToast,
     setActiveModule
   } = useVeterinaria();
 
@@ -72,6 +73,12 @@ export const Modulo1Pacientes: React.FC = () => {
     fotoUrl: ''
   });
 
+  useEffect(() => {
+    if (!responsables.some((r) => r.id === selectedRespId) && responsables.length > 0) {
+      setSelectedRespId(responsables[0].id);
+    }
+  }, [responsables, selectedRespId]);
+
   // New Turno Form State
   const [newTurnoData, setNewTurnoData] = useState({
     mascotaId: mascotas[0]?.id || '',
@@ -95,6 +102,11 @@ export const Modulo1Pacientes: React.FC = () => {
     prioridad: 'Normal' as 'Normal' | 'Urgente'
   });
 
+  useEffect(() => {
+    if (mascotas.length && !mascotas.some((m) => m.id === newTurnoData.mascotaId)) setNewTurnoData((d) => ({ ...d, mascotaId: mascotas[0].id }));
+    if (mascotas.length && !mascotas.some((m) => m.id === newConsultaData.mascotaId)) setNewConsultaData((d) => ({ ...d, mascotaId: mascotas[0].id }));
+  }, [mascotas, newTurnoData.mascotaId, newConsultaData.mascotaId]);
+
   // Filtering
   const filteredMascotas = mascotas.filter(m => {
     const resp = responsables.find(r => r.id === m.responsableId);
@@ -110,46 +122,48 @@ export const Modulo1Pacientes: React.FC = () => {
   });
 
   // Handle Mascota Submission
-  const handleSaveMascota = (e: React.FormEvent) => {
+  const handleSaveMascota = async (e: React.FormEvent) => {
     e.preventDefault();
     let respId = selectedRespId;
     if (crearNuevoResponsable) {
       if (!newRespData.nombreCompleto || !newRespData.documento) return;
-      const respCreated = addResponsable(newRespData);
-      respId = respCreated.id;
+      try {
+        const respCreated = await addResponsable(newRespData);
+        respId = respCreated.id;
+      } catch (error) {
+        showToast({ type: 'error', title: 'No se pudo guardar el responsable', description: error instanceof Error ? error.message : 'Verificá los datos y la conexión con el backend.' });
+        return;
+      }
     }
-    if (!newMascotaData.nombre || !newMascotaData.raza) return;
+    if (!newMascotaData.nombre || !newMascotaData.raza || !respId) return;
 
-    addMascota({
-      ...newMascotaData,
-      responsableId: respId,
-      pesoKg: Number(newMascotaData.pesoKg)
-    });
+    try {
+      await addMascota({
+        ...newMascotaData,
+        responsableId: respId,
+        pesoKg: Number(newMascotaData.pesoKg)
+      });
 
-    setIsNewMascotaModalOpen(false);
-    setNewMascotaData({
-      nombre: '',
-      especie: 'Canino',
-      raza: '',
-      sexo: 'Hembra',
-      fechaNacimientoAprox: '2023-01-01',
-      pesoKg: 10.0,
-      microchip: '',
-      alergias: '',
-      fotoUrl: ''
-    });
+      setIsNewMascotaModalOpen(false);
+      setNewMascotaData({
+        nombre: '', especie: 'Canino', raza: '', sexo: 'Hembra',
+        fechaNacimientoAprox: '2023-01-01', pesoKg: 10.0, microchip: '', alergias: '', fotoUrl: ''
+      });
+    } catch (error) {
+      showToast({ type: 'error', title: 'No se pudo guardar la mascota', description: error instanceof Error ? error.message : 'Verificá los datos y la conexión con el backend.' });
+    }
   };
 
   // Handle Turno Submission
-  const handleSaveTurno = (e: React.FormEvent) => {
+  const handleSaveTurno = async (e: React.FormEvent) => {
     e.preventDefault();
     const pet = mascotas.find(m => m.id === newTurnoData.mascotaId);
     if (!pet) return;
 
-    const res = addTurno({
+    const res = await addTurno({
       ...newTurnoData,
       responsableId: pet.responsableId,
-      estado: 'Confirmado'
+      estado: 'Pendiente'
     });
 
     if (res.success) {
@@ -158,13 +172,14 @@ export const Modulo1Pacientes: React.FC = () => {
   };
 
   // Handle Consulta Submission
-  const handleSaveConsulta = (e: React.FormEvent) => {
+  const handleSaveConsulta = async (e: React.FormEvent) => {
     e.preventDefault();
     const now = new Date();
     const hora = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     const fecha = now.toISOString().split('T')[0];
 
-    const consultaCreated = addConsulta({
+    try {
+    const consultaCreated = await addConsulta({
       mascotaId: newConsultaData.mascotaId,
       veterinario: newConsultaData.veterinario,
       fecha,
@@ -179,7 +194,7 @@ export const Modulo1Pacientes: React.FC = () => {
 
     // If laboratory analysis was requested, automatically emit an Orden de Derivación!
     if (newConsultaData.requiereAnalisis) {
-      createOrden({
+      await createOrden({
         consultaId: consultaCreated.id,
         mascotaId: newConsultaData.mascotaId,
         veterinarioSolicitante: newConsultaData.veterinario,
@@ -210,6 +225,9 @@ export const Modulo1Pacientes: React.FC = () => {
       tipoAnalisisSolicitado: 'Hemograma Completo',
       prioridad: 'Normal'
     });
+    } catch (error) {
+      showToast({ type: 'error', title: 'No se pudo guardar la consulta', description: error instanceof Error ? error.message : 'Verificá los datos y la conexión con el backend.' });
+    }
   };
 
   const openHistoryForMascota = (m: Mascota) => {
@@ -501,7 +519,7 @@ export const Modulo1Pacientes: React.FC = () => {
                               </button>
                               <span className="text-neutral-300">·</span>
                               <button
-                                onClick={() => updateTurnoEstado(turno.id, 'Cancelado')}
+                                onClick={() => void updateTurnoEstado(turno.id, 'Cancelado')}
                                 className="text-xs text-rose-600 hover:underline"
                               >
                                 Cancelar
@@ -871,8 +889,9 @@ export const Modulo1Pacientes: React.FC = () => {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              updateMascota(editingMascota.id, editingMascota);
-              setIsEditMascotaModalOpen(false);
+              void updateMascota(editingMascota.id, editingMascota)
+                .then(() => setIsEditMascotaModalOpen(false))
+                .catch((error: unknown) => showToast({ type: 'error', title: 'No se pudo actualizar la mascota', description: error instanceof Error ? error.message : 'Verificá los datos y la conexión con el backend.' }));
             }}
             className="space-y-4 text-xs"
           >

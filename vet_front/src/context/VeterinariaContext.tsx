@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import {
   Responsable,
   Mascota,
@@ -13,21 +13,10 @@ import {
   ResultadoAnalisis,
   EstadoTurno,
   EstadoPrecinto,
-  EstadoMuestra
+  EstadoMuestra,
+  EstadoOrden,
+  TipoAnalisis
 } from '../types/veterinaria';
-import {
-  INITIAL_RESPONSABLES,
-  INITIAL_MASCOTAS,
-  INITIAL_TURNOS,
-  INITIAL_CONSULTAS,
-  INITIAL_ORDENES,
-  INITIAL_MUESTRAS,
-  INITIAL_CONSERVADORAS,
-  INITIAL_PRECINTOS,
-  INITIAL_REMITOS,
-  INITIAL_INCIDENCIAS,
-  INITIAL_RESULTADOS
-} from '../data/mockData';
 
 export type ActiveModule = 'pacientes' | 'ordenes' | 'despacho' | 'recepcion' | 'python';
 
@@ -65,15 +54,15 @@ interface VeterinariaContextType {
   clearToast: () => void;
 
   // Actions
-  addResponsable: (resp: Omit<Responsable, 'id' | 'fechaAlta'>) => Responsable;
-  addMascota: (mascota: Omit<Mascota, 'id'>) => Mascota;
-  updateMascota: (id: string, updates: Partial<Mascota>) => void;
-  addTurno: (turno: Omit<Turno, 'id'>) => { success: boolean; error?: string };
-  updateTurnoEstado: (id: string, nuevoEstado: EstadoTurno) => void;
-  addConsulta: (consulta: Omit<ConsultaMedica, 'id'>) => ConsultaMedica;
-  createOrden: (orden: Omit<OrdenAnalisis, 'id'>) => OrdenAnalisis;
-  registrarMuestra: (muestra: Omit<MuestraBiologica, 'id' | 'historialTrazabilidad' | 'estadoActual'>) => MuestraBiologica;
-  vincularMuestraConAnalisis: (ordenId: string, detalleId: string, muestraId: string) => void;
+  addResponsable: (resp: Omit<Responsable, 'id' | 'fechaAlta'>) => Promise<Responsable>;
+  addMascota: (mascota: Omit<Mascota, 'id'>) => Promise<Mascota>;
+  updateMascota: (id: string, updates: Partial<Mascota>) => Promise<void>;
+  addTurno: (turno: Omit<Turno, 'id'>) => Promise<{ success: boolean; error?: string }>;
+  updateTurnoEstado: (id: string, nuevoEstado: EstadoTurno) => Promise<void>;
+  addConsulta: (consulta: Omit<ConsultaMedica, 'id'>) => Promise<ConsultaMedica>;
+  createOrden: (orden: Omit<OrdenAnalisis, 'id'>) => Promise<OrdenAnalisis>;
+  registrarMuestra: (muestra: Omit<MuestraBiologica, 'id' | 'historialTrazabilidad' | 'estadoActual'>) => Promise<MuestraBiologica>;
+  vincularMuestraConAnalisis: (ordenId: string, detalleId: string, muestraId: string) => Promise<void>;
   prepararEnvio: (params: {
     conservadoraId: string;
     precintoCodigo: string;
@@ -82,96 +71,100 @@ interface VeterinariaContextType {
     muestrasIds: string[];
     temperaturaDespachoC: number;
     observaciones?: string;
-  }) => RemitoBiologico;
+  }) => Promise<RemitoBiologico>;
   verificarPrecintoYRecepcion: (params: {
     remitoId: string;
     estadoPrecinto: EstadoPrecinto;
     verificadoPor: string;
     observaciones?: string;
-  }) => void;
-  registrarResultado: (resultado: Omit<ResultadoAnalisis, 'id'>) => ResultadoAnalisis;
-  resolverIncidencia: (id: string, resolucion: string) => void;
-  resetToDemoData: () => void;
+  }) => Promise<void>;
+  registrarResultado: (resultado: Omit<ResultadoAnalisis, 'id'>) => Promise<ResultadoAnalisis>;
+  resolverIncidencia: (id: string, resolucion: string) => Promise<void>;
+  reloadFromDatabase: () => void;
 }
 
 const VeterinariaContext = createContext<VeterinariaContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'patitas_veterinaria_data_v2';
+async function errorApi(response: Response): Promise<string> {
+  try {
+    const body = await response.json();
+    return typeof body.detail === 'string' ? body.detail : `Error HTTP ${response.status}: ${JSON.stringify(body.detail || body)}`;
+  } catch {
+    return `Error HTTP ${response.status}`;
+  }
+}
+
+async function api<T = any>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, {
+    ...init,
+    headers: { ...(init?.body ? { 'Content-Type': 'application/json' } : {}), ...init?.headers },
+  });
+  if (!response.ok) throw new Error(await errorApi(response));
+  if (response.status === 204) return undefined as T;
+  return response.json();
+}
+
+const estadoTitulo = (value: string | undefined) => (value || '').replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+const fechaLocal = (value: string | undefined) => value ? value.replace('T', ' ').slice(0, 16) : '';
+
+function mapMuestra(m: any, envio?: any): MuestraBiologica {
+  const estados: Record<string, EstadoMuestra> = {
+    extraida: 'Extraída', pendiente_preparacion: 'Extraída', lista_para_envio: 'Extraída', empaquetada: 'Empaquetada', enviada: 'En tránsito', en_transito: 'En tránsito', recibida: 'Recibida', analizada: 'Analizada', rechazada: 'Rechazada', con_inconveniente: 'Rechazada',
+  };
+  return {
+    id: String(m.id), ordenId: String(m.orden_id), identificacionFisica: m.codigo_etiqueta,
+    tipoMaterial: m.tipo_muestra?.nombre || '', fechaHoraExtraccion: fechaLocal(m.fecha_extraccion),
+    responsableExtraccion: m.responsable_extraccion, condicionConservacion: m.condiciones_conservacion,
+    estadoActual: estados[m.estado] || 'Extraída', conservadoraId: envio ? String(envio.conservadoras?.[0]?.conservadora?.id || '') : undefined,
+    remitoId: envio?.remito?.numero, historialTrazabilidad: (m.historial || []).map((h: any) => ({
+      id: String(h.id), fechaHora: fechaLocal(h.changed_at), estadoAnterior: h.estado_anterior ? estados[h.estado_anterior] : undefined,
+      estadoNuevo: estados[h.estado_nuevo] || 'Extraída', responsable: h.responsable || '', ubicacion: '', observaciones: h.motivo || '',
+    })), observaciones: m.observaciones_calidad,
+  };
+}
+
+function mapOrden(o: any): OrdenAnalisis {
+  const estados: Record<string, EstadoOrden> = { solicitada: 'Solicitada', en_preparacion: 'En preparación', enviada: 'Enviada', con_resultados: 'Con resultados', cancelada: 'Cancelada' };
+  return {
+    id: String(o.id), consultaId: String(o.consulta_id), mascotaId: String(o.paciente_id || ''),
+    veterinarioSolicitante: o.veterinario_nombre || '', fechaSolicitud: fechaLocal(o.created_at), prioridad: o.observaciones?.toLowerCase().includes('urgente') ? 'Urgente' : 'Normal',
+    estado: estados[o.estado] || 'Solicitada', detalles: (o.detalles || []).map((d: any) => ({
+      id: String(d.id), tipoAnalisis: (d.tipo_analisis?.nombre || '') as TipoAnalisis, indicaciones: d.indicaciones || '',
+      muestraAsociadaId: d.asociaciones_muestras?.[0] ? String(d.asociaciones_muestras[0].muestra_id) : undefined,
+      estado: d.estado === 'resultado_listo' ? 'Resultado listo' : d.tiene_muestra ? 'Muestra vinculada' : 'Pendiente de muestra',
+    })),
+  };
+}
+
+function mapEnvio(e: any, recibido: boolean, incidenciasM4: any[]): RemitoBiologico {
+  const contenido = e.remito?.contenido || {};
+  const firstSeal = e.precintos?.[0];
+  const hasIncident = incidenciasM4.some((i) => String(i.envio_id) === String(e.id) && !i.resuelta_en);
+  return {
+    id: e.remito?.numero || String(e.id), envioId: String(e.id), numeroRemito: e.remito?.numero,
+    fechaEmision: fechaLocal(e.fecha_despacho || e.fecha_creacion), clinicaOrigen: e.origen, laboratorioDestino: e.destino,
+    responsableDespacho: e.responsable_despacho || '', transportista: e.transportista || '',
+    conservadoraId: String(firstSeal?.conservadora_id || e.conservadoras?.[0]?.conservadora?.id || ''),
+    precintoCodigo: firstSeal?.codigo || '', muestrasIds: (e.muestras || []).map((m: any) => String(m.id)),
+    estado: hasIncident ? 'Con incidencias' : recibido ? 'Recibido' : e.estado === 'despachado' ? 'Despachado' : 'En preparación',
+    temperaturaDespachoC: e.registros_temperatura?.[0]?.temperatura_medida_c ?? 4,
+    observaciones: e.observaciones || contenido.condiciones_empaquetado,
+  };
+}
 
 export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Load saved data or defaults
-  const [responsables, setResponsables] = useState<Responsable[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_responsables`) || localStorage.getItem('patitas_veterinaria_data_v1_responsables');
-    return saved ? JSON.parse(saved) : INITIAL_RESPONSABLES;
-  });
-
-  const [mascotas, setMascotas] = useState<Mascota[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_mascotas`) || localStorage.getItem('patitas_veterinaria_data_v1_mascotas');
-    if (saved) {
-      try {
-        const parsed: Mascota[] = JSON.parse(saved);
-        return parsed.map(m => {
-          const initial = INITIAL_MASCOTAS.find(init => init.id === m.id);
-          if (initial) {
-            return {
-              ...m,
-              raza: (m.id === 'MASC-002' && initial.raza === 'Mestizo') ? initial.raza : m.raza,
-              fotoUrl: m.fotoUrl || initial.fotoUrl
-            };
-          }
-          return m;
-        });
-      } catch {
-        return INITIAL_MASCOTAS;
-      }
-    }
-    return INITIAL_MASCOTAS;
-  });
-
-  const [turnos, setTurnos] = useState<Turno[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_turnos`);
-    return saved ? JSON.parse(saved) : INITIAL_TURNOS;
-  });
-
-  const [consultas, setConsultas] = useState<ConsultaMedica[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_consultas`);
-    return saved ? JSON.parse(saved) : INITIAL_CONSULTAS;
-  });
-
-  const [ordenes, setOrdenes] = useState<OrdenAnalisis[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_ordenes`);
-    return saved ? JSON.parse(saved) : INITIAL_ORDENES;
-  });
-
-  const [muestras, setMuestras] = useState<MuestraBiologica[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_muestras`);
-    return saved ? JSON.parse(saved) : INITIAL_MUESTRAS;
-  });
-
-  const [conservadoras, setConservadoras] = useState<Conservadora[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_conservadoras`);
-    return saved ? JSON.parse(saved) : INITIAL_CONSERVADORAS;
-  });
-
-  const [precintos, setPrecintos] = useState<PrecintoSanitario[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_precintos`);
-    return saved ? JSON.parse(saved) : INITIAL_PRECINTOS;
-  });
-
-  const [remitos, setRemitos] = useState<RemitoBiologico[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_remitos`);
-    return saved ? JSON.parse(saved) : INITIAL_REMITOS;
-  });
-
-  const [incidencias, setIncidencias] = useState<Incidencia[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_incidencias`);
-    return saved ? JSON.parse(saved) : INITIAL_INCIDENCIAS;
-  });
-
-  const [resultados, setResultados] = useState<ResultadoAnalisis[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_resultados`);
-    return saved ? JSON.parse(saved) : INITIAL_RESULTADOS;
-  });
+  // Operational state starts empty and is populated exclusively from the API.
+  const [responsables, setResponsables] = useState<Responsable[]>([]);
+  const [mascotas, setMascotas] = useState<Mascota[]>([]);
+  const [turnos, setTurnos] = useState<Turno[]>([]);
+  const [consultas, setConsultas] = useState<ConsultaMedica[]>([]);
+  const [ordenes, setOrdenes] = useState<OrdenAnalisis[]>([]);
+  const [muestras, setMuestras] = useState<MuestraBiologica[]>([]);
+  const [conservadoras, setConservadoras] = useState<Conservadora[]>([]);
+  const [precintos, setPrecintos] = useState<PrecintoSanitario[]>([]);
+  const [remitos, setRemitos] = useState<RemitoBiologico[]>([]);
+  const [incidencias, setIncidencias] = useState<Incidencia[]>([]);
+  const [resultados, setResultados] = useState<ResultadoAnalisis[]>([]);
 
   // UI state
   const [activeModule, setActiveModule] = useState<ActiveModule>('pacientes');
@@ -179,6 +172,56 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedMascotaId, setSelectedMascotaId] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastMessage | null>(null);
+  const veterinariosApiRef = useRef<any[]>([]);
+
+  useEffect(() => {
+    let activo = true;
+    const cargarDatos = async () => {
+      try {
+        const [responsablesApi, mascotasApi, veterinariosApi, turnosApi, consultasApi, ordenesApi, tiposAnalisisApi, tiposMuestraApi, enviosApi, conservadorasApi, pendientesApi, incidenciasApi, resultadosApi] = await Promise.all([
+          api('/api/v1/responsables'), api('/api/v1/mascotas'), api('/api/v1/veterinarios'), api('/api/v1/turnos'), api('/api/v1/consultas'),
+          api('/api/v1/ordenes-analisis'), api('/api/v1/tipos-analisis'), api('/api/v1/tipos-muestra'),
+          api('/api/v1/envios'), api('/api/v1/conservadoras'), api('/api/v1/envios-pendientes'),
+          api('/api/v1/incidencias'), api('/api/v1/resultados'),
+        ]);
+        if (!activo) return;
+        setResponsables(responsablesApi.map((r: any): Responsable => ({ id: String(r.id), nombreCompleto: r.full_name, documento: r.document_number, telefono: r.phone, email: r.email || '', domicilio: r.address || '', fechaAlta: '' })));
+        setMascotas(mascotasApi.map((m: any): Mascota => ({ id: String(m.id), responsableId: String(m.responsible_id), nombre: m.name, especie: m.species as Mascota['especie'], raza: m.breed || '', sexo: (m.sex || 'Hembra') as Mascota['sexo'], fechaNacimientoAprox: m.birth_date || '', pesoKg: m.weight_kg || 0, microchip: m.microchip || '', alergias: m.notes || '', fotoUrl: m.photo_url || '' })));
+        veterinariosApiRef.current = veterinariosApi;
+        setTurnos(turnosApi.map((t: any): Turno => ({ id: String(t.id), mascotaId: String(t.pet_id), responsableId: String(mascotasApi.find((m: any) => m.id === t.pet_id)?.responsible_id || ''), veterinario: veterinariosApi.find((v: any) => v.id === t.veterinarian_id)?.full_name || String(t.veterinarian_id), fecha: t.scheduled_at.slice(0, 10), hora: t.scheduled_at.slice(11, 16), motivo: t.reason || '', estado: estadoTitulo(t.status) as EstadoTurno })));
+        setConsultas(consultasApi.map((c: any): ConsultaMedica => ({ id: String(c.id), mascotaId: String(c.pet_id), veterinario: veterinariosApi.find((v: any) => v.id === c.veterinarian_id)?.full_name || String(c.veterinarian_id), fecha: c.attended_at.slice(0, 10), hora: c.attended_at.slice(11, 16), motivo: c.reason, evaluacionClinica: c.observations || '', diagnosticoPresuntivo: c.diagnosis || '', tratamiento: c.treatment || '', requiereAnalisis: false, turnoId: c.appointment_id ? String(c.appointment_id) : undefined })));
+        setOrdenes(ordenesApi.map(mapOrden));
+        setMuestras(ordenesApi.flatMap((o: any) => (o.muestras || []).map((m: any) => mapMuestra(m, enviosApi.find((e: any) => e.muestras?.some((em: any) => em.id === m.id))))));
+        setConservadoras(conservadorasApi.map((c: any): Conservadora => ({ id: String(c.id), nombre: c.descripcion || c.codigo, capacidadMuestras: 20, temperaturaRequerida: '2°C a 8°C', disponible: c.disponible })));
+        const pendingIds = new Set(pendientesApi.map((e: any) => String(e.envio_id)));
+        setRemitos(enviosApi.map((e: any) => mapEnvio(e, e.estado === 'despachado' && !pendingIds.has(String(e.id)), incidenciasApi)));
+        setPrecintos(enviosApi.flatMap((e: any) => (e.precintos || []).map((p: any) => ({ id: String(p.id), codigoUnico: p.codigo, conservadoraId: String(p.conservadora_id), colocadoPor: p.colocado_por, fechaHoraColocacion: fechaLocal(p.fecha_colocacion), estadoVerificacion: p.verificaciones?.length ? estadoTitulo(p.verificaciones[p.verificaciones.length - 1].resultado) as EstadoPrecinto : undefined }))));
+        setIncidencias(incidenciasApi.map((i: any): Incidencia => ({ id: String(i.id), fechaHora: fechaLocal(i.fecha), remitoId: String(i.envio_id), muestraId: i.muestra_id ? String(i.muestra_id) : undefined, tipo: 'Discrepancia en Remito', descripcion: i.descripcion, responsableReporte: i.responsable_id, resuelto: Boolean(i.resuelta_en), resolucion: i.resolucion || undefined })));
+        setResultados(resultadosApi.map((r: any): ResultadoAnalisis => ({ id: String(r.id), ordenId: String(r.orden_id), detalleAnalisisId: String(r.detalle_orden_id), muestraId: String(r.muestra_id || ''), fechaRecepcionResultado: fechaLocal(r.fecha_recepcion), laboratorioNombre: r.procedencia, valores: r.datos.valores || [], conclusionDiagnostica: r.datos.conclusionDiagnostica || '', nombreArchivoAdjunto: r.informe_nombre || undefined, estado: r.estado === 'validado' ? 'Validado por Veterinario' : r.estado === 'en_revision' ? 'En revisión' : 'Recibido', validadoPor: r.registrado_por })));
+
+        // Bootstrap only operational catalogs/equipment, never fake patient records.
+        const sampleNames = ['Sangre con EDTA (Tubo lila)', 'Suero sanguíneo (Tubo rojo)', 'Plasma heparinizado', 'Orina por cistocentesis', 'Materia fecal', 'Biopsia / Tejido en formol', 'Raspado cutáneo'];
+        const analysisNames = ['Hemograma Completo', 'Perfil Bioquímico Hepático', 'Perfil Renal (Urea y Creatinina)', 'Orina Completa y Sedimento', 'Coproparasitológico Seriado', 'Citología Cutánea / PAAF', 'Dosaje Hormonal (T4 / Cortisol)'];
+        const sampleIds = [...tiposMuestraApi];
+        for (const nombre of sampleNames) if (!sampleIds.some((t: any) => t.nombre === nombre)) sampleIds.push(await api('/api/v1/tipos-muestra', { method: 'POST', body: JSON.stringify({ nombre, condiciones_conservacion_default: 'Refrigerada (2° a 8°C)' }) }));
+        for (const nombre of analysisNames) if (!tiposAnalisisApi.some((t: any) => t.nombre === nombre)) await api('/api/v1/tipos-analisis', { method: 'POST', body: JSON.stringify({ nombre, tipos_muestra_compatibles_ids: sampleIds.map((t: any) => t.id) }) });
+        const defaultCoolers = [
+          ['CON-01', 'Conservadora Isotérmica Azul A1'],
+          ['CON-02', 'Conservadora Isotérmica Roja B2'],
+          ['CON-03', 'Conservadora Portátil C3'],
+        ];
+        for (const [codigo, descripcion] of defaultCoolers) {
+          if (!conservadorasApi.some((c: any) => c.codigo === codigo)) await api('/api/v1/conservadoras', { method: 'POST', body: JSON.stringify({ codigo, descripcion }) });
+        }
+        const conservadorasFinal = await api('/api/v1/conservadoras');
+        if (activo) setConservadoras(conservadorasFinal.map((c: any): Conservadora => ({ id: String(c.id), nombre: c.descripcion || c.codigo, capacidadMuestras: 20, temperaturaRequerida: '2°C a 8°C', disponible: c.disponible })));
+      } catch (error) {
+        if (activo) showToast({ type: 'warning', title: 'No se pudieron cargar los datos de SQLite', description: error instanceof Error ? error.message : 'Verificá que el backend esté activo.' });
+      }
+    };
+    void cargarDatos();
+    return () => { activo = false; };
+  }, []);
 
   // Auto-dismiss toast
   useEffect(() => {
@@ -194,29 +237,42 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const clearToast = () => setToast(null);
 
-  // Sync to localStorage
-  useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_responsables`, JSON.stringify(responsables));
-    localStorage.setItem(`${STORAGE_KEY}_mascotas`, JSON.stringify(mascotas));
-    localStorage.setItem(`${STORAGE_KEY}_turnos`, JSON.stringify(turnos));
-    localStorage.setItem(`${STORAGE_KEY}_consultas`, JSON.stringify(consultas));
-    localStorage.setItem(`${STORAGE_KEY}_ordenes`, JSON.stringify(ordenes));
-    localStorage.setItem(`${STORAGE_KEY}_muestras`, JSON.stringify(muestras));
-    localStorage.setItem(`${STORAGE_KEY}_conservadoras`, JSON.stringify(conservadoras));
-    localStorage.setItem(`${STORAGE_KEY}_precintos`, JSON.stringify(precintos));
-    localStorage.setItem(`${STORAGE_KEY}_remitos`, JSON.stringify(remitos));
-    localStorage.setItem(`${STORAGE_KEY}_incidencias`, JSON.stringify(incidencias));
-    localStorage.setItem(`${STORAGE_KEY}_resultados`, JSON.stringify(resultados));
-  }, [responsables, mascotas, turnos, consultas, ordenes, muestras, conservadoras, precintos, remitos, incidencias, resultados]);
+  const obtenerVeterinarioId = async (nombre: string): Promise<number> => {
+    const existente = veterinariosApiRef.current.find((v) => v.full_name.toLowerCase() === nombre.toLowerCase());
+    if (existente) return existente.id;
+    const license = `MP-${nombre.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 50)}`;
+    const creado = await api('/api/v1/veterinarios', { method: 'POST', body: JSON.stringify({ full_name: nombre, license_number: license }) });
+    veterinariosApiRef.current = [...veterinariosApiRef.current, creado];
+    return creado.id;
+  };
+
+  const obtenerTipoAnalisisId = async (nombre: string): Promise<number> => {
+    const tipos = await api<any[]>('/api/v1/tipos-analisis');
+    const existente = tipos.find((t) => t.nombre === nombre);
+    if (existente) return existente.id;
+    const creado = await api('/api/v1/tipos-analisis', { method: 'POST', body: JSON.stringify({ nombre }) });
+    return creado.id;
+  };
+
+  const obtenerTipoMuestraId = async (nombre: string): Promise<number> => {
+    const tipos = await api<any[]>('/api/v1/tipos-muestra');
+    const existente = tipos.find((t) => t.nombre === nombre);
+    if (existente) return existente.id;
+    const creado = await api('/api/v1/tipos-muestra', { method: 'POST', body: JSON.stringify({ nombre, condiciones_conservacion_default: 'Refrigerada (2° a 8°C)' }) });
+    return creado.id;
+  };
 
   // ACTIONS
 
-  const addResponsable = (data: Omit<Responsable, 'id' | 'fechaAlta'>): Responsable => {
-    const newId = `RESP-${String(responsables.length + 1).padStart(3, '0')}`;
+  const addResponsable = async (data: Omit<Responsable, 'id' | 'fechaAlta'>): Promise<Responsable> => {
+    const response = await fetch('/api/v1/responsables', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ document_number: data.documento, full_name: data.nombreCompleto, phone: data.telefono, email: data.email || null, address: data.domicilio || null }),
+    });
+    if (!response.ok) throw new Error(await errorApi(response));
+    const saved = await response.json();
     const newResp: Responsable = {
-      ...data,
-      id: newId,
-      fechaAlta: new Date().toISOString().split('T')[0]
+      ...data, id: String(saved.id), fechaAlta: new Date().toISOString().split('T')[0],
     };
     setResponsables(prev => [newResp, ...prev]);
     showToast({
@@ -227,11 +283,23 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
     return newResp;
   };
 
-  const addMascota = (data: Omit<Mascota, 'id'>): Mascota => {
-    const newId = `MASC-${String(mascotas.length + 1).padStart(3, '0')}`;
+  const addMascota = async (data: Omit<Mascota, 'id'>): Promise<Mascota> => {
+    if (!Number.isInteger(Number(data.responsableId))) {
+      throw new Error('Esperá a que carguen los responsables desde el backend y volvé a intentar.');
+    }
+    const response = await fetch('/api/v1/mascotas', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        responsible_id: Number(data.responsableId), name: data.nombre, species: data.especie,
+        breed: data.raza || null, sex: data.sexo, birth_date: data.fechaNacimientoAprox || null,
+        notes: data.alergias || null, weight_kg: data.pesoKg || null,
+        microchip: data.microchip || null, photo_url: data.fotoUrl || null,
+      }),
+    });
+    if (!response.ok) throw new Error(await errorApi(response));
+    const saved = await response.json();
     const newMascota: Mascota = {
-      ...data,
-      id: newId
+      ...data, id: String(saved.id),
     };
     setMascotas(prev => [newMascota, ...prev]);
     showToast({
@@ -242,7 +310,22 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
     return newMascota;
   };
 
-  const updateMascota = (id: string, updates: Partial<Mascota>) => {
+  const updateMascota = async (id: string, updates: Partial<Mascota>) => {
+    const payload: Record<string, unknown> = {};
+    if (updates.responsableId !== undefined) payload.responsible_id = Number(updates.responsableId);
+    if (updates.nombre !== undefined) payload.name = updates.nombre;
+    if (updates.especie !== undefined) payload.species = updates.especie;
+    if (updates.raza !== undefined) payload.breed = updates.raza || null;
+    if (updates.sexo !== undefined) payload.sex = updates.sexo;
+    if (updates.fechaNacimientoAprox !== undefined) payload.birth_date = updates.fechaNacimientoAprox || null;
+    if (updates.pesoKg !== undefined) payload.weight_kg = updates.pesoKg || null;
+    if (updates.microchip !== undefined) payload.microchip = updates.microchip || null;
+    if (updates.alergias !== undefined) payload.notes = updates.alergias || null;
+    if (updates.fotoUrl !== undefined) payload.photo_url = updates.fotoUrl || null;
+    const response = await fetch(`/api/v1/mascotas/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    });
+    if (!response.ok) throw new Error(await errorApi(response));
     setMascotas(prev => prev.map(m => (m.id === id ? { ...m, ...updates } : m)));
     showToast({
       type: 'success',
@@ -251,40 +334,35 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
     });
   };
 
-  const addTurno = (data: Omit<Turno, 'id'>): { success: boolean; error?: string } => {
-    // Regla de Negocio: Evitar superposición de turnos para el mismo profesional y fecha/hora
-    const conflicto = turnos.find(
-      t => t.veterinario === data.veterinario &&
-           t.fecha === data.fecha &&
-           t.hora === data.hora &&
-           t.estado !== 'Cancelado'
-    );
-
-    if (conflicto) {
-      const err = `El profesional ${data.veterinario} ya tiene un turno reservado el ${data.fecha} a las ${data.hora}.`;
-      showToast({
-        type: 'error',
-        title: 'Superposición de turnos',
-        description: err
-      });
-      return { success: false, error: err };
-    }
-
-    const newId = `TUR-${String(turnos.length + 101)}`;
-    const newTurno: Turno = {
-      ...data,
-      id: newId
-    };
+  const addTurno = async (data: Omit<Turno, 'id'>): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const veterinarianId = await obtenerVeterinarioId(data.veterinario);
+      const created = await api<any>('/api/v1/turnos', { method: 'POST', body: JSON.stringify({
+        pet_id: Number(data.mascotaId), veterinarian_id: veterinarianId,
+        scheduled_at: `${data.fecha}T${data.hora}:00`, duration_minutes: 30, reason: data.motivo,
+      }) });
+      const newTurno: Turno = { ...data, id: String(created.id), veterinario: data.veterinario };
     setTurnos(prev => [newTurno, ...prev]);
     showToast({
       type: 'success',
       title: 'Turno agendado',
       description: `Turno agendado para el ${data.fecha} a las ${data.hora}.`
     });
-    return { success: true };
+      return { success: true };
+    } catch (error) {
+      const err = error instanceof Error ? error.message : 'No se pudo guardar el turno.';
+      showToast({ type: 'error', title: 'No se pudo agendar el turno', description: err });
+      return { success: false, error: err };
+    }
   };
 
-  const updateTurnoEstado = (id: string, nuevoEstado: EstadoTurno) => {
+  const updateTurnoEstado = async (id: string, nuevoEstado: EstadoTurno) => {
+    try {
+      await api(`/api/v1/turnos/${id}/estado`, { method: 'PATCH', body: JSON.stringify({ status: nuevoEstado.toLowerCase(), reason: null }) });
+    } catch (error) {
+      showToast({ type: 'error', title: 'No se pudo actualizar el turno', description: error instanceof Error ? error.message : 'Error de conexión con la API.' });
+      return;
+    }
     setTurnos(prev => prev.map(t => t.id === id ? { ...t, estado: nuevoEstado } : t));
     showToast({
       type: 'info',
@@ -293,12 +371,14 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
     });
   };
 
-  const addConsulta = (data: Omit<ConsultaMedica, 'id'>): ConsultaMedica => {
-    const newId = `CON-${String(consultas.length + 1).padStart(3, '0')}`;
-    const newConsulta: ConsultaMedica = {
-      ...data,
-      id: newId
-    };
+  const addConsulta = async (data: Omit<ConsultaMedica, 'id'>): Promise<ConsultaMedica> => {
+    const veterinarianId = await obtenerVeterinarioId(data.veterinario);
+    const created = await api<any>('/api/v1/consultas', { method: 'POST', body: JSON.stringify({
+      pet_id: Number(data.mascotaId), veterinarian_id: veterinarianId,
+      attended_at: `${data.fecha}T${data.hora}:00`, reason: data.motivo,
+      observations: data.evaluacionClinica, diagnosis: data.diagnosticoPresuntivo, treatment: data.tratamiento,
+    }) });
+    const newConsulta: ConsultaMedica = { ...data, id: String(created.id) };
     setConsultas(prev => [newConsulta, ...prev]);
 
     // If it was linked to a turno, mark the turno as Atendido
@@ -314,40 +394,43 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
     return newConsulta;
   };
 
-  const createOrden = (data: Omit<OrdenAnalisis, 'id'>): OrdenAnalisis => {
-    const newId = `ORD-2026-${String(ordenes.length + 1).padStart(3, '0')}`;
-    const newOrden: OrdenAnalisis = {
-      ...data,
-      id: newId
-    };
+  const createOrden = async (data: Omit<OrdenAnalisis, 'id'>): Promise<OrdenAnalisis> => {
+    let consultaId = Number(data.consultaId);
+    if (!Number.isInteger(consultaId)) {
+      const latest = consultas.find((c) => c.mascotaId === data.mascotaId);
+      if (latest) consultaId = Number(latest.id);
+      else {
+        const petId = Number(data.mascotaId);
+        const vetId = await obtenerVeterinarioId(data.veterinarioSolicitante);
+        const consulta = await api<any>('/api/v1/consultas', { method: 'POST', body: JSON.stringify({ pet_id: petId, veterinarian_id: vetId, reason: 'Solicitud de análisis clínicos' }) });
+        consultaId = consulta.id;
+        const consultaLocal: ConsultaMedica = { id: String(consulta.id), mascotaId: data.mascotaId, veterinario: data.veterinarioSolicitante, fecha: new Date().toISOString().slice(0, 10), hora: new Date().toTimeString().slice(0, 5), motivo: 'Solicitud de análisis clínicos', evaluacionClinica: '', diagnosticoPresuntivo: '', tratamiento: '', requiereAnalisis: true };
+        setConsultas((prev) => [consultaLocal, ...prev]);
+      }
+    }
+    const vetId = await obtenerVeterinarioId(data.veterinarioSolicitante);
+    const detalles = await Promise.all(data.detalles.map(async (d) => ({ tipo_analisis_id: await obtenerTipoAnalisisId(d.tipoAnalisis), indicaciones: d.indicaciones })));
+    const saved = await api<any>('/api/v1/ordenes-analisis', { method: 'POST', body: JSON.stringify({ consulta_id: consultaId, veterinario_id: vetId, observaciones: data.prioridad === 'Urgente' ? 'Prioridad urgente' : null, detalles }) });
+    const newOrden = mapOrden(saved);
     setOrdenes(prev => [newOrden, ...prev]);
     showToast({
       type: 'success',
       title: 'Orden de derivación creada',
-      description: `Se formalizó la orden ${newId} con ${data.detalles.length} análisis.`
+      description: `Se formalizó la orden ${newOrden.id} con ${data.detalles.length} análisis.`
     });
     return newOrden;
   };
 
-  const registrarMuestra = (
+  const registrarMuestra = async (
     data: Omit<MuestraBiologica, 'id' | 'historialTrazabilidad' | 'estadoActual'>
-  ): MuestraBiologica => {
-    const newId = `MUE-${Math.floor(1000 + Math.random() * 9000)}`;
-    const nuevoEvento = {
-      id: `TRAZ-${Date.now()}`,
-      fechaHora: new Date().toISOString().replace('T', ' ').substring(0, 16),
-      estadoNuevo: 'Extraída' as EstadoMuestra,
-      responsable: data.responsableExtraccion,
-      ubicacion: 'Consultorio Clínico - Extracción',
-      observaciones: data.observaciones || 'Extracción y rotulado inicial del tubo.'
-    };
-
-    const newMuestra: MuestraBiologica = {
-      ...data,
-      id: newId,
-      estadoActual: 'Extraída',
-      historialTrazabilidad: [nuevoEvento]
-    };
+  ): Promise<MuestraBiologica> => {
+    const tipoMuestraId = await obtenerTipoMuestraId(data.tipoMaterial);
+    const saved = await api<any>('/api/v1/muestras', { method: 'POST', body: JSON.stringify({
+      codigo_etiqueta: data.identificacionFisica, orden_id: Number(data.ordenId), tipo_muestra_id: tipoMuestraId,
+      responsable_extraccion: data.responsableExtraccion, condiciones_conservacion: data.condicionConservacion,
+      observaciones_calidad: data.observaciones, fecha_extraccion: new Date().toISOString(),
+    }) });
+    const newMuestra = mapMuestra(saved);
 
     setMuestras(prev => [newMuestra, ...prev]);
     
@@ -357,12 +440,17 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
     showToast({
       type: 'success',
       title: 'Muestra biológica registrada',
-      description: `Identificador ${newId} (${data.identificacionFisica}) registrado con trazabilidad de origen.`
+      description: `Identificador ${newMuestra.id} (${data.identificacionFisica}) registrado con trazabilidad de origen.`
     });
     return newMuestra;
   };
 
-  const vincularMuestraConAnalisis = (ordenId: string, detalleId: string, muestraId: string) => {
+  const vincularMuestraConAnalisis = async (ordenId: string, detalleId: string, muestraId: string) => {
+    await api(`/api/v1/ordenes-analisis/${ordenId}/asociar-muestra`, { method: 'POST', body: JSON.stringify({ muestra_id: Number(muestraId), detalle_ids: [Number(detalleId)] }) });
+    const currentSample = muestras.find((m) => m.id === muestraId);
+    if (currentSample?.estadoActual === 'Extraída') {
+      await api(`/api/v1/muestras/${muestraId}/estado`, { method: 'PATCH', body: JSON.stringify({ nuevo_estado: 'lista_para_envio', responsable: currentSample.responsableExtraccion, motivo: 'Muestra vinculada y lista para despacho' }) });
+    }
     setOrdenes(prev => prev.map(ord => {
       if (ord.id !== ordenId) return ord;
       return {
@@ -385,7 +473,7 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
     });
   };
 
-  const prepararEnvio = (params: {
+  const prepararEnvio = async (params: {
     conservadoraId: string;
     precintoCodigo: string;
     responsableDespacho: string;
@@ -393,117 +481,58 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
     muestrasIds: string[];
     temperaturaDespachoC: number;
     observaciones?: string;
-  }): RemitoBiologico => {
+  }): Promise<RemitoBiologico> => {
+    const envio = await api<any>('/api/v1/envios', { method: 'POST', body: JSON.stringify({
+      origen: 'Clínica Veterinaria Patitas & Co. - Sede Central', destino: 'Laboratorio Central de Derivación BioVet',
+      condiciones_empaquetado: params.observaciones || 'Muestras protegidas y refrigeradas', responsable_preparacion: params.responsableDespacho,
+      conservadoras: [{ conservadora_id: Number(params.conservadoraId), muestra_ids: params.muestrasIds.map(Number) }], observaciones: params.observaciones,
+    }) });
+    const conPrecinto = await api<any>(`/api/v1/envios/${envio.id}/precintos`, { method: 'POST', body: JSON.stringify({ codigo: params.precintoCodigo, conservadora_id: Number(params.conservadoraId), colocado_por: params.responsableDespacho }) });
+    const despachado = await api<any>(`/api/v1/envios/${envio.id}/despachar`, { method: 'POST', body: JSON.stringify({ responsable_despacho: params.responsableDespacho, transportista: params.transportista }) });
+    await api(`/api/v1/envios/${envio.id}/temperaturas`, { method: 'POST', body: JSON.stringify({ conservadora_id: Number(params.conservadoraId), temperatura_requerida_c: 4, temperatura_medida_c: params.temperaturaDespachoC, fecha_medicion: new Date().toISOString(), responsable: params.responsableDespacho, observaciones: params.observaciones }) });
+    const nuevoRemito = mapEnvio({ ...despachado, precintos: conPrecinto.precintos }, false, []);
+    nuevoRemito.estado = 'Despachado';
     const now = new Date().toISOString().replace('T', ' ').substring(0, 16);
-    const remitoId = `REM-2026-${String(remitos.length + 13).padStart(3, '0')}`;
-    const precintoId = `PREC-${Date.now().toString().slice(-5)}`;
-
-    // 1. Register Precinto
-    const nuevoPrecinto: PrecintoSanitario = {
-      id: precintoId,
-      codigoUnico: params.precintoCodigo,
-      conservadoraId: params.conservadoraId,
-      colocadoPor: params.responsableDespacho,
-      fechaHoraColocacion: now
-    };
-    setPrecintos(prev => [nuevoPrecinto, ...prev]);
-
-    // 2. Register Remito
-    const nuevoRemito: RemitoBiologico = {
-      id: remitoId,
-      fechaEmision: now,
-      clinicaOrigen: 'Clínica Veterinaria Patitas & Co. - Sede Central',
-      laboratorioDestino: 'Laboratorio Central de Derivación BioVet',
-      responsableDespacho: params.responsableDespacho,
-      transportista: params.transportista,
-      conservadoraId: params.conservadoraId,
-      precintoCodigo: params.precintoCodigo,
-      muestrasIds: params.muestrasIds,
-      estado: 'Despachado',
-      temperaturaDespachoC: params.temperaturaDespachoC,
-      observaciones: params.observaciones
-    };
+    setPrecintos(prev => [{ id: String(despachado.precintos?.[0]?.id || ''), codigoUnico: params.precintoCodigo, conservadoraId: params.conservadoraId, colocadoPor: params.responsableDespacho, fechaHoraColocacion: now }, ...prev]);
     setRemitos(prev => [nuevoRemito, ...prev]);
-
-    // 3. Mark Conservadora as in-use
     setConservadoras(prev => prev.map(c => c.id === params.conservadoraId ? { ...c, disponible: false } : c));
-
-    // 4. Update state of samples: Extraída -> Empaquetada -> En tránsito
-    setMuestras(prev => prev.map(m => {
-      if (!params.muestrasIds.includes(m.id)) return m;
-      const eventosNuevos = [
-        ...m.historialTrazabilidad,
-        {
-          id: `TRAZ-${Date.now()}-1`,
-          fechaHora: now,
-          estadoAnterior: m.estadoActual,
-          estadoNuevo: 'Empaquetada' as EstadoMuestra,
-          responsable: params.responsableDespacho,
-          ubicacion: `Conservadora ${params.conservadoraId} (Precinto ${params.precintoCodigo})`,
-          observaciones: 'Colocación en conservadora con geles refrigerantes.'
-        },
-        {
-          id: `TRAZ-${Date.now()}-2`,
-          fechaHora: now,
-          estadoAnterior: 'Empaquetada' as EstadoMuestra,
-          estadoNuevo: 'En tránsito' as EstadoMuestra,
-          responsable: params.transportista,
-          ubicacion: 'En traslado hacia Laboratorio Central BioVet',
-          observaciones: `Despachado con remito ${remitoId}. T° inicial: ${params.temperaturaDespachoC}°C.`
-        }
-      ];
-
-      return {
-        ...m,
-        conservadoraId: params.conservadoraId,
-        remitoId: remitoId,
-        estadoActual: 'En tránsito' as EstadoMuestra,
-        historialTrazabilidad: eventosNuevos
-      };
-    }));
-
-    // Update related ordenes to Enviada
-    setOrdenes(prev => prev.map(ord => {
-      const hasSample = ord.detalles.some(d => d.muestraAsociadaId && params.muestrasIds.includes(d.muestraAsociadaId));
-      return hasSample ? { ...ord, estado: 'Enviada' } : ord;
-    }));
+    setMuestras(prev => prev.map(m => params.muestrasIds.includes(m.id) ? { ...m, estadoActual: 'En tránsito', conservadoraId: params.conservadoraId, remitoId: String(envio.id) } : m));
+    setOrdenes(prev => prev.map(o => params.muestrasIds.some(id => o.detalles.some(d => d.muestraAsociadaId === id)) ? { ...o, estado: 'Enviada' } : o));
 
     showToast({
       type: 'success',
       title: 'Envío despachado con éxito',
-      description: `Remito ${remitoId} generado con ${params.muestrasIds.length} muestras. Precinto ${params.precintoCodigo}.`
+      description: `Remito ${nuevoRemito.numeroRemito || nuevoRemito.id} generado con ${params.muestrasIds.length} muestras. Precinto ${params.precintoCodigo}.`
     });
 
     return nuevoRemito;
   };
 
-  const verificarPrecintoYRecepcion = (params: {
+  const verificarPrecintoYRecepcion = async (params: {
     remitoId: string;
     estadoPrecinto: EstadoPrecinto;
     verificadoPor: string;
     observaciones?: string;
-  }) => {
+  }): Promise<void> => {
     const now = new Date().toISOString().replace('T', ' ').substring(0, 16);
-    const targetRemito = remitos.find(r => r.id === params.remitoId);
-    if (!targetRemito) return;
+    const targetRemito = remitos.find(r => r.id === params.remitoId || r.envioId === params.remitoId);
+    if (!targetRemito) throw new Error('No se encontró el envío seleccionado.');
 
     const esPrecintoValido = params.estadoPrecinto === 'Integro';
 
-    // 1. Update Precinto record
-    setPrecintos(prev => prev.map(p => {
-      if (p.codigoUnico === targetRemito.precintoCodigo) {
-        return {
-          ...p,
-          estadoVerificacion: params.estadoPrecinto,
-          verificadoPor: params.verificadoPor,
-          fechaHoraVerificacion: now,
-          observaciones: params.observaciones
-        };
-      }
-      return p;
-    }));
-
-    // 2. Free up Conservadora
+    const codigoEstado: Record<EstadoPrecinto, string> = { Integro: 'integro', Roto: 'roto', Ausente: 'ausente', CodigoNoCoincide: 'codigo_no_coincide' };
+    const estadoRecepcion = params.estadoPrecinto === 'CodigoNoCoincide' ? 'otra_anomalia' : codigoEstado[params.estadoPrecinto];
+    await api('/api/v1/verificaciones-precinto', { method: 'POST', body: JSON.stringify({
+      envio_id: targetRemito.envioId || targetRemito.id, precinto_id: precintos.find((p) => p.codigoUnico === targetRemito.precintoCodigo)?.id || null,
+      codigo_esperado: targetRemito.precintoCodigo, codigo_observado: params.estadoPrecinto === 'Ausente' ? null : params.estadoPrecinto === 'CodigoNoCoincide' ? 'NO COINCIDE' : targetRemito.precintoCodigo,
+      estado: estadoRecepcion, responsable_id: params.verificadoPor, fecha_verificacion: new Date().toISOString(),
+      observaciones: params.observaciones,
+    }) });
+    await api('/api/v1/recepciones', { method: 'POST', body: JSON.stringify({
+      envio_id: targetRemito.envioId || targetRemito.id, fecha_recepcion: new Date().toISOString(), responsable_id: params.verificadoPor,
+      muestras_despachadas: targetRemito.muestrasIds, muestras_recibidas: targetRemito.muestrasIds, observaciones: params.observaciones,
+    }) });
+    setPrecintos(prev => prev.map(p => p.codigoUnico === targetRemito.precintoCodigo ? { ...p, estadoVerificacion: params.estadoPrecinto, verificadoPor: params.verificadoPor, fechaHoraVerificacion: now, observaciones: params.observaciones } : p));
     setConservadoras(prev => prev.map(c => c.id === targetRemito.conservadoraId ? { ...c, disponible: true } : c));
 
     if (esPrecintoValido) {
@@ -547,16 +576,8 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
         : 'Precinto sanitario ausente.';
 
       // Register Incident
-      const nuevaIncidencia: Incidencia = {
-        id: `INC-${Date.now().toString().slice(-4)}`,
-        fechaHora: now,
-        remitoId: params.remitoId,
-        tipo: 'Precinto Roto',
-        descripcion: `${motivoFalla}. Observaciones: ${params.observaciones || 'Sin detalles adicionales'}.`,
-        responsableReporte: params.verificadoPor,
-        resuelto: false
-      };
-      setIncidencias(prev => [nuevaIncidencia, ...prev]);
+      const incidents = await api<any[]>('/api/v1/incidencias?abiertas=true');
+      setIncidencias(incidents.map((i): Incidencia => ({ id: String(i.id), fechaHora: fechaLocal(i.fecha), remitoId: String(i.envio_id), tipo: 'Precinto Roto', descripcion: i.descripcion, responsableReporte: i.responsable_id, resuelto: Boolean(i.resuelta_en) })).concat(incidencias));
 
       // Mutate samples to RECHAZADA
       setMuestras(prev => prev.map(m => {
@@ -588,12 +609,19 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   };
 
-  const registrarResultado = (data: Omit<ResultadoAnalisis, 'id'>): ResultadoAnalisis => {
-    const newId = `RES-${Date.now().toString().slice(-4)}`;
-    const newResultado: ResultadoAnalisis = {
-      ...data,
-      id: newId
-    };
+  const registrarResultado = async (data: Omit<ResultadoAnalisis, 'id'>): Promise<ResultadoAnalisis> => {
+    const order = ordenes.find((o) => o.id === data.ordenId);
+    const pet = mascotas.find((m) => m.id === order?.mascotaId);
+    if (!order || !pet) throw new Error('No se encontró la orden o el paciente vinculado.');
+    const saved = await api<any>('/api/v1/resultados', { method: 'POST', body: JSON.stringify({
+      orden_id: data.ordenId, detalle_orden_id: data.detalleAnalisisId, paciente_id: pet.id, muestra_id: data.muestraId || null,
+      fecha_recepcion: new Date(data.fechaRecepcionResultado).toISOString(), procedencia: data.laboratorioNombre,
+      datos: { valores: data.valores, conclusionDiagnostica: data.conclusionDiagnostica }, informe_nombre: data.nombreArchivoAdjunto || null,
+      registrado_por: data.validadoPor || data.laboratorioNombre,
+    }) });
+    const status = data.estado === 'Validado por Veterinario' ? 'validado' : data.estado === 'En revisión' ? 'en_revision' : 'recibido';
+    if (status !== 'recibido') await api(`/api/v1/resultados/${saved.id}/estado`, { method: 'PATCH', body: JSON.stringify({ estado: status }) });
+    const newResultado: ResultadoAnalisis = { ...data, id: String(saved.id) };
     setResultados(prev => [newResultado, ...prev]);
 
     // Update Muestra to Analizada
@@ -644,7 +672,8 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
     return newResultado;
   };
 
-  const resolverIncidencia = (id: string, resolucion: string) => {
+  const resolverIncidencia = async (id: string, resolucion: string) => {
+    await api(`/api/v1/incidencias/${id}/resolver`, { method: 'POST', body: JSON.stringify({ resolucion, responsable_resolucion_id: 'Laboratorio' }) });
     setIncidencias(prev => prev.map(inc => inc.id === id ? { ...inc, resuelto: true, resolucion } : inc));
     showToast({
       type: 'info',
@@ -653,24 +682,13 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
     });
   };
 
-  const resetToDemoData = () => {
-    setResponsables(INITIAL_RESPONSABLES);
-    setMascotas(INITIAL_MASCOTAS);
-    setTurnos(INITIAL_TURNOS);
-    setConsultas(INITIAL_CONSULTAS);
-    setOrdenes(INITIAL_ORDENES);
-    setMuestras(INITIAL_MUESTRAS);
-    setConservadoras(INITIAL_CONSERVADORAS);
-    setPrecintos(INITIAL_PRECINTOS);
-    setRemitos(INITIAL_REMITOS);
-    setIncidencias(INITIAL_INCIDENCIAS);
-    setResultados(INITIAL_RESULTADOS);
-    localStorage.clear();
+  const reloadFromDatabase = () => {
     showToast({
       type: 'info',
-      title: 'Datos restaurados',
-      description: 'Se restablecieron los datos iniciales de demostración de Patitas & Co.'
+      title: 'Actualizando desde SQLite',
+      description: 'Se volverán a cargar los datos persistidos en la base.'
     });
+    window.location.reload();
   };
 
   return (
@@ -711,7 +729,7 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
         verificarPrecintoYRecepcion,
         registrarResultado,
         resolverIncidencia,
-        resetToDemoData
+        reloadFromDatabase
       }}
     >
       {children}

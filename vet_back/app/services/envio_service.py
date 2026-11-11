@@ -20,7 +20,7 @@ from app.models.envio import (
     VerificacionPrecinto,
     envio_muestras,
 )
-from app.models.orden_analisis import HistorialMuestra, Muestra
+from app.models.orden_analisis import HistorialMuestra, HistorialOrdenAnalisis, Muestra, OrdenAnalisis
 from app.schemas.envio import (
     ConservadoraCreate,
     DespachoCreate,
@@ -342,6 +342,17 @@ class EnvioService:
                 motivo=f"Despachada en remito {numero_remito}",
                 fecha_evento=fecha_despacho,
             )
+
+        ordenes_ids = {muestra.orden_id for muestra in envio.muestras}
+        for orden_id in ordenes_ids:
+            orden = self.db.get(OrdenAnalisis, orden_id)
+            if orden and orden.estado == "en_preparacion":
+                anterior = orden.estado
+                orden.estado = "enviada"
+                self.db.add(HistorialOrdenAnalisis(
+                    orden_id=orden.id, estado_anterior=anterior, estado_nuevo="enviada",
+                    motivo=f"Despachada en remito {numero_remito}",
+                ))
 
         self.db.add(
             HistorialEnvio(

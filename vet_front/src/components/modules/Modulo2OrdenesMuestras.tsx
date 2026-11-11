@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useVeterinaria } from '../../context/VeterinariaContext';
 import { 
   OrdenAnalisis, 
@@ -32,7 +32,8 @@ export const Modulo2OrdenesMuestras: React.FC = () => {
     createOrden,
     registrarMuestra,
     vincularMuestraConAnalisis,
-    setActiveModule
+    setActiveModule,
+    showToast
   } = useVeterinaria();
 
   const [activeTab, setActiveTab] = useState<'ordenes' | 'muestras'>('ordenes');
@@ -69,8 +70,14 @@ export const Modulo2OrdenesMuestras: React.FC = () => {
     muestraId: muestras[0]?.id || ''
   });
 
+  useEffect(() => {
+    if (mascotas.length && !mascotas.some((m) => m.id === newOrdenData.mascotaId)) setNewOrdenData((d) => ({ ...d, mascotaId: mascotas[0].id }));
+    if (ordenes.length && !ordenes.some((o) => o.id === newMuestraData.ordenId)) setNewMuestraData((d) => ({ ...d, ordenId: ordenes[0].id }));
+    if (muestras.length && !muestras.some((m) => m.id === vincularData.muestraId)) setVincularData((d) => ({ ...d, muestraId: muestras[0].id }));
+  }, [mascotas, ordenes, muestras, newOrdenData.mascotaId, newMuestraData.ordenId, vincularData.muestraId]);
+
   // Handlers
-  const handleCreateOrden = (e: React.FormEvent) => {
+  const handleCreateOrden = async (e: React.FormEvent) => {
     e.preventDefault();
     const now = new Date().toISOString().replace('T', ' ').substring(0, 16);
     // Find or create a consultation reference
@@ -83,7 +90,8 @@ export const Modulo2OrdenesMuestras: React.FC = () => {
       estado: 'Pendiente de muestra' as const
     }));
 
-    createOrden({
+    try {
+    await createOrden({
       consultaId: latestConsulta ? latestConsulta.id : 'CON-ESPONTANEA',
       mascotaId: newOrdenData.mascotaId,
       veterinarioSolicitante: newOrdenData.veterinarioSolicitante,
@@ -94,15 +102,19 @@ export const Modulo2OrdenesMuestras: React.FC = () => {
     });
 
     setIsNewOrdenModalOpen(false);
+    } catch (error) {
+      showToast({ type: 'error', title: 'No se pudo crear la orden', description: error instanceof Error ? error.message : 'Verificá la API y los datos.' });
+    }
   };
 
-  const handleRegistrarMuestra = (e: React.FormEvent) => {
+  const handleRegistrarMuestra = async (e: React.FormEvent) => {
     e.preventDefault();
     const now = new Date().toISOString().replace('T', ' ').substring(0, 16);
 
     const code = newMuestraData.identificacionFisica || `TUB-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    registrarMuestra({
+    try {
+    await registrarMuestra({
       ordenId: newMuestraData.ordenId,
       identificacionFisica: code,
       tipoMaterial: newMuestraData.tipoMaterial,
@@ -121,14 +133,21 @@ export const Modulo2OrdenesMuestras: React.FC = () => {
       condicionConservacion: 'Refrigerada (2° a 8°C)',
       observaciones: ''
     });
+    } catch (error) {
+      showToast({ type: 'error', title: 'No se pudo registrar la muestra', description: error instanceof Error ? error.message : 'Verificá la API y los datos.' });
+    }
   };
 
-  const handleVincularMuestra = (e: React.FormEvent) => {
+  const handleVincularMuestra = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!vincularData.ordenId || !vincularData.detalleId || !vincularData.muestraId) return;
 
-    vincularMuestraConAnalisis(vincularData.ordenId, vincularData.detalleId, vincularData.muestraId);
-    setIsVincularModalOpen(false);
+    try {
+      await vincularMuestraConAnalisis(vincularData.ordenId, vincularData.detalleId, vincularData.muestraId);
+      setIsVincularModalOpen(false);
+    } catch (error) {
+      showToast({ type: 'error', title: 'No se pudo vincular la muestra', description: error instanceof Error ? error.message : 'Verificá la API y los datos.' });
+    }
   };
 
   const openVincularForOrden = (ord: OrdenAnalisis) => {

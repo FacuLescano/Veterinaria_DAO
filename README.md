@@ -89,7 +89,7 @@ veterinaria/
 | `vet_back/app/db/` | Configuración del motor y la sesión de base de datos. |
 | `vet_back/test/` | Pruebas automatizadas unitarias y de integración. |
 | `vet_front/src/components/` | Componentes visuales organizados por módulo (pacientes, órdenes, despacho, recepción). |
-| `vet_front/src/context/` | Estado global de la aplicación (VeterinaryContext) con persistencia en localStorage. |
+| `vet_front/src/context/` | Estado de pantalla hidratado desde la API y persistido por el backend en SQLite. |
 | `vet_front/src/types/` | Definiciones TypeScript del dominio veterinario y trazabilidad. |
 | `backend/app/models/` | Modelos de dominio y entidades mapeadas con SQLAlchemy. |
 | `backend/app/schemas/` | Esquemas de validación y estructuras de entrada y salida de la API. |
@@ -281,7 +281,7 @@ npm run dev
 
 Abrí `http://localhost:3000`. El backend está en `http://127.0.0.1:8000`; `/health` permite confirmar la conexión y `/docs` muestra la API. Para cambiar el destino del proxy del frontend, definir `VITE_API_PROXY_TARGET` en `vet_front/.env.local` (por ejemplo `http://127.0.0.1:8000`) y reiniciar Vite.
 
-**Alcance de la conexión actual:** el frontend consulta `/health` y Vite reenvía `/api/*` al backend. Los formularios y datos de los módulos siguen usando mocks y `localStorage`; todavía no consumen los endpoints de negocio ni persisten cambios en SQLite.
+**Persistencia:** los módulos operativos cargan y guardan sus registros mediante la API en SQLite (`vet_back/data/veterinaria.db`). El frontend ya no usa mocks ni `localStorage` como fuente para pacientes, atención, órdenes, muestras, envíos, recepción, incidencias o resultados.
 
 Si todo funciona correctamente, Uvicorn mostrará un mensaje indicando que el servidor está ejecutándose, normalmente en:
 
@@ -339,7 +339,7 @@ npm run dev
 
 El frontend reenvía `/api/*` y `/health` al backend (`http://127.0.0.1:8000`). Si el backend está en otra dirección, crear `vet_front/.env.local` con `VITE_API_PROXY_TARGET=http://host:puerto` y reiniciar Vite.
 
-El indicador **API disponible** del encabezado comprueba `/health`. Esta comprobación confirma conectividad, pero los módulos de negocio del frontend todavía usan datos demo guardados en `localStorage`: las acciones de los formularios no están persistidas en la API.
+El indicador **API disponible** del encabezado comprueba `/health`. Los catálogos de análisis, tipos de muestra y conservadoras se crean al iniciar si aún no existen; los registros operativos se consultan desde SQLite.
 
 ### Compilación y verificación para producción
 

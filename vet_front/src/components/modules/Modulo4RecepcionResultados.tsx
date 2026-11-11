@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useVeterinaria } from '../../context/VeterinariaContext';
 import { RemitoBiologico, EstadoPrecinto, ResultadoAnalisis } from '../../types/veterinaria';
 import { Modal } from '../common/Modal';
@@ -27,7 +27,8 @@ export const Modulo4RecepcionResultados: React.FC = () => {
     resultados,
     verificarPrecintoYRecepcion,
     registrarResultado,
-    resolverIncidencia
+    resolverIncidencia,
+    showToast
   } = useVeterinaria();
 
   const [activeTab, setActiveTab] = useState<'recepcion' | 'resultados' | 'incidencias'>('recepcion');
@@ -62,6 +63,13 @@ export const Modulo4RecepcionResultados: React.FC = () => {
     validadoPor: 'Dr. Alejandro Morales'
   });
 
+  useEffect(() => {
+    const orden = ordenes[0];
+    const muestra = muestras.find((m) => m.estadoActual === 'Recibida') || muestras[0];
+    if (orden && (!ordenes.some((o) => o.id === resultadoData.ordenId))) setResultadoData((d) => ({ ...d, ordenId: orden.id, detalleAnalisisId: orden.detalles[0]?.id || '' }));
+    if (muestra && !muestras.some((m) => m.id === resultadoData.muestraId)) setResultadoData((d) => ({ ...d, muestraId: muestra.id }));
+  }, [ordenes, muestras, resultadoData.ordenId, resultadoData.muestraId]);
+
   // Pending shipments
   const enviosPendientes = remitos.filter(r => r.estado === 'Despachado');
 
@@ -75,11 +83,12 @@ export const Modulo4RecepcionResultados: React.FC = () => {
     setIsVerificarModalOpen(true);
   };
 
-  const handleConfirmarRecepcion = (e: React.FormEvent) => {
+  const handleConfirmarRecepcion = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedRemito) return;
 
-    verificarPrecintoYRecepcion({
+    try {
+    await verificarPrecintoYRecepcion({
       remitoId: selectedRemito.id,
       estadoPrecinto: verificacionData.estadoPrecinto,
       verificadoPor: verificacionData.verificadoPor,
@@ -87,13 +96,17 @@ export const Modulo4RecepcionResultados: React.FC = () => {
     });
 
     setIsVerificarModalOpen(false);
+    } catch (error) {
+      showToast({ type: 'error', title: 'No se pudo registrar la recepción', description: error instanceof Error ? error.message : 'Verificá la conexión y el envío.' });
+    }
   };
 
-  const handleGuardarResultado = (e: React.FormEvent) => {
+  const handleGuardarResultado = async (e: React.FormEvent) => {
     e.preventDefault();
     const now = new Date().toISOString().replace('T', ' ').substring(0, 16);
 
-    registrarResultado({
+    try {
+    await registrarResultado({
       ordenId: resultadoData.ordenId,
       detalleAnalisisId: resultadoData.detalleAnalisisId,
       muestraId: resultadoData.muestraId,
@@ -129,15 +142,22 @@ export const Modulo4RecepcionResultados: React.FC = () => {
     });
 
     setIsCargarResultadoModalOpen(false);
+    } catch (error) {
+      showToast({ type: 'error', title: 'No se pudo guardar el resultado', description: error instanceof Error ? error.message : 'Verificá la orden, el análisis y la muestra.' });
+    }
   };
 
-  const handleResolveIncidencia = (e: React.FormEvent) => {
+  const handleResolveIncidencia = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedIncidenciaForResolve || !resolucionTexto) return;
 
-    resolverIncidencia(selectedIncidenciaForResolve, resolucionTexto);
-    setSelectedIncidenciaForResolve(null);
-    setResolucionTexto('');
+    try {
+      await resolverIncidencia(selectedIncidenciaForResolve, resolucionTexto);
+      setSelectedIncidenciaForResolve(null);
+      setResolucionTexto('');
+    } catch (error) {
+      showToast({ type: 'error', title: 'No se pudo resolver la incidencia', description: error instanceof Error ? error.message : 'Verificá el estado de la incidencia.' });
+    }
   };
 
   return (

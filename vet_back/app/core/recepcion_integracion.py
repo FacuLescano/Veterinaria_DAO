@@ -1,9 +1,4 @@
-"""Contratos de lectura para integrar los módulos 2 y 3 sin duplicar sus modelos.
-
-Al integrar sus ramas, reemplazar ``listar_envios_despachados`` por un adaptador
-que consulte el servicio/DAO dueño de Envio. El resto del módulo depende solo
-de este contrato pequeño.
-"""
+"""Adaptador de lectura de despachos para el módulo 4."""
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -19,5 +14,22 @@ class EnvioDespachado:
 
 
 def listar_envios_despachados() -> list[EnvioDespachado]:
-    """Adaptador temporal vacío; el módulo 3 aporta su implementación al integrar."""
-    return []
+    from app.db.session import SessionLocal
+    from app.models.envio import Envio
+
+    with SessionLocal() as sesion:
+        envios = sesion.query(Envio).filter(Envio.estado == "despachado").all()
+        return [
+            EnvioDespachado(
+                envio_id=str(envio.id),
+                fecha_despacho=envio.fecha_despacho,
+                remito_id=envio.remito.numero if envio.remito else str(envio.id),
+                muestras_ids=[str(muestra.id) for muestra in envio.muestras],
+                conservadoras_ids=[str(conservadora.id) for conservadora in envio.conservadoras],
+                precintos=[
+                    {"id": str(precinto.id), "codigo": precinto.codigo, "conservadora_id": str(precinto.conservadora_id)}
+                    for precinto in envio.precintos
+                ],
+            )
+            for envio in envios
+        ]

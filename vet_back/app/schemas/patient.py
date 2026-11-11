@@ -72,6 +72,9 @@ class CrearMascota(BaseModel):
     sex: str | None = Field(default=None, max_length=30)
     birth_date: date | None = None
     notes: str | None = None
+    weight_kg: float | None = Field(default=None, gt=0)
+    microchip: str | None = Field(default=None, max_length=100)
+    photo_url: str | None = None
 
 
 class ActualizarMascota(BaseModel):
@@ -82,6 +85,9 @@ class ActualizarMascota(BaseModel):
     sex: str | None = Field(default=None, max_length=30)
     birth_date: date | None = None
     notes: str | None = None
+    weight_kg: float | None = Field(default=None, gt=0)
+    microchip: str | None = Field(default=None, max_length=100)
+    photo_url: str | None = None
 
 
 class LecturaMascota(ModeloORM):
@@ -93,6 +99,9 @@ class LecturaMascota(ModeloORM):
     sex: str | None
     birth_date: date | None
     notes: str | None
+    weight_kg: float | None
+    microchip: str | None
+    photo_url: str | None
 
 
 class LecturaHistorialResponsablesMascota(ModeloORM):

@@ -154,6 +154,8 @@ export type EstadoEnvio = 'En preparación' | 'Despachado' | 'Recibido' | 'Con i
 
 export interface RemitoBiologico {
   id: string; // Ej: REM-2026-104
+  envioId?: string;
+  numeroRemito?: string;
   fechaEmision: string;
   clinicaOrigen: string;
   laboratorioDestino: string;

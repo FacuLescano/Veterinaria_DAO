@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useVeterinaria } from '../../context/VeterinariaContext';
 import { RemitoBiologico, MuestraBiologica } from '../../types/veterinaria';
 import { Modal } from '../common/Modal';
@@ -23,7 +23,9 @@ export const Modulo3PreparacionDespacho: React.FC = () => {
     remitos,
     precintos,
     mascotas,
-    prepararEnvio
+    prepararEnvio,
+    ordenes,
+    showToast
   } = useVeterinaria();
 
   const [isNewDespachoModalOpen, setIsNewDespachoModalOpen] = useState(false);
@@ -40,8 +42,13 @@ export const Modulo3PreparacionDespacho: React.FC = () => {
     observaciones: 'Cadena de frío mantenida con geles eutécticos congelados.'
   });
 
+  useEffect(() => {
+    const available = conservadoras.find((c) => c.disponible);
+    if (available && !conservadoras.some((c) => c.id === formData.conservadoraId)) setFormData((d) => ({ ...d, conservadoraId: available.id }));
+  }, [conservadoras, formData.conservadoraId]);
+
   // Muestras that are ready to be packed (Extraída state)
-  const muestrasListasParaEmpacar = muestras.filter(m => m.estadoActual === 'Extraída');
+  const muestrasListasParaEmpacar = muestras.filter(m => m.estadoActual === 'Extraída' && ordenes.some(o => o.detalles.some(d => d.muestraAsociadaId === m.id)));
 
   const handleToggleMuestra = (id: string) => {
     setFormData(prev => ({
@@ -52,11 +59,12 @@ export const Modulo3PreparacionDespacho: React.FC = () => {
     }));
   };
 
-  const handleCreateDespacho = (e: React.FormEvent) => {
+  const handleCreateDespacho = async (e: React.FormEvent) => {
     e.preventDefault();
     if (formData.selectedMuestrasIds.length === 0) return;
 
-    const nuevoRemito = prepararEnvio({
+    try {
+    const nuevoRemito = await prepararEnvio({
       conservadoraId: formData.conservadoraId,
       precintoCodigo: formData.precintoCodigo,
       responsableDespacho: formData.responsableDespacho,
@@ -69,6 +77,9 @@ export const Modulo3PreparacionDespacho: React.FC = () => {
     setIsNewDespachoModalOpen(false);
     // Open printable remito view immediately for convenience
     setSelectedRemitoForPrint(nuevoRemito);
+    } catch (error) {
+      showToast({ type: 'error', title: 'No se pudo despachar el envío', description: error instanceof Error ? error.message : 'Verificá muestras listas, precinto y conservadora.' });
+    }
   };
 
   return (

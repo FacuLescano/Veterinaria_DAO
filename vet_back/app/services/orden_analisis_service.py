@@ -370,6 +370,14 @@ class OrdenAnalisisService:
         )
         self.muestra_dao.add_historial(evento_historial)
 
+        if orden.estado == "solicitada":
+            estado_anterior = orden.estado
+            orden.estado = "en_preparacion"
+            self.orden_dao.add_historial(HistorialOrdenAnalisis(
+                orden_id=orden.id, estado_anterior=estado_anterior, estado_nuevo="en_preparacion",
+                motivo="Se registró la primera extracción de muestra",
+            ))
+
         from app.observers.muestra import CambioEstadoMuestra, publicar_cambio_estado
 
         publicar_cambio_estado(

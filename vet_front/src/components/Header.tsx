@@ -11,7 +11,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenQuickNew }) => {
   const {
     activeModule,
     setIsMobileMenuOpen,
-    resetToDemoData,
+    reloadFromDatabase,
     mascotas,
     muestras,
     ordenes
@@ -89,7 +89,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenQuickNew }) => {
       <div className="flex items-center gap-2.5 shrink-0">
         <span
           role="status"
-          title={apiDisponible === null ? 'Comprobando la API' : apiDisponible ? 'Backend disponible; los datos de los módulos siguen en modo demo local' : 'No se pudo conectar con el backend'}
+          title={apiDisponible === null ? 'Comprobando la API' : apiDisponible ? 'API disponible; pacientes y responsables se guardan en SQLite' : 'No se pudo conectar con el backend'}
           className={`hidden md:inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${apiDisponible ? 'bg-emerald-50 text-emerald-700' : apiDisponible === false ? 'bg-rose-50 text-rose-700' : 'bg-neutral-100 text-neutral-500'}`}
         >
           <span className={`h-1.5 w-1.5 rounded-full ${apiDisponible ? 'bg-emerald-500' : apiDisponible === false ? 'bg-rose-500' : 'bg-neutral-400'}`} />
@@ -112,13 +112,13 @@ export const Header: React.FC<HeaderProps> = ({ onOpenQuickNew }) => {
 
         {/* Reset Demo Data Button */}
         <button
-          onClick={resetToDemoData}
-          title="Restablecer datos de prueba"
+          onClick={reloadFromDatabase}
+          title="Volver a cargar los datos guardados en SQLite"
           className="p-2 text-xs font-medium text-neutral-600 hover:text-neutral-900 hover:bg-[#FAF6EF] border border-[#E7E2DA] rounded-lg transition-colors flex items-center gap-1.5"
-          aria-label="Restaurar demo inicial"
+          aria-label="Recargar datos guardados"
         >
           <RotateCcw className="w-3.5 h-3.5 text-[#8C8C91]" />
-          <span className="hidden sm:inline">Restaurar Demo</span>
+          <span className="hidden sm:inline">Recargar datos</span>
         </button>
 
         {/* Primary Action Button (triggers contextual modal/form) */}
