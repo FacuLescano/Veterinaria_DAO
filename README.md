@@ -154,10 +154,10 @@ Si ya tenés el repositorio clonado, simplemente abrí una terminal en su carpet
 ### Paso 2. Ingresar al backend
 
 ```powershell
-cd backend
+cd vet_back
 ```
 
-Los siguientes comandos de instalación y ejecución del backend deben realizarse desde esta carpeta, salvo que se indique lo contrario.
+Los siguientes comandos de instalación y ejecución del backend deben realizarse desde esta carpeta.
 
 ### Paso 3. Crear el entorno virtual
 
@@ -225,7 +225,7 @@ Si todavía no existe un `requirements.txt` con las dependencias del proyecto, p
 
 Si el proyecto necesita variables de entorno, revisar el archivo `.env.example` y utilizarlo como referencia para crear un archivo `.env` local.
 
-Por ejemplo, si existe un archivo de ejemplo en la carpeta `backend/`:
+Por ejemplo, si existe un archivo de ejemplo en la carpeta `vet_back/`:
 
 ```powershell
 Copy-Item .env.example .env
@@ -235,11 +235,11 @@ Completar las variables requeridas según la configuración del proyecto.
 
 El archivo `.env` puede contener configuraciones locales o credenciales y **no debe subirse al repositorio**. El archivo `.env.example` debe incluir solamente nombres de variables y valores de ejemplo que no sean secretos.
 
-Si el backend todavía no utiliza variables de entorno, este paso puede omitirse.
+Para el uso local no hace falta configurar variables: el backend crea sus bases SQLite en `vet_back/data/`.
 
 ## 6. Ejecutar el backend
 
-Una vez instaladas las dependencias y activado el entorno virtual, verificar que la terminal se encuentre dentro de la carpeta `backend/`.
+Una vez instaladas las dependencias y activado el entorno virtual, verificar que la terminal se encuentre dentro de la carpeta `vet_back/`.
 
 Ejecutar:
 
@@ -253,6 +253,35 @@ uvicorn app.main:app --reload
 - `app.main`: indica que debe buscar el módulo `main.py` dentro del paquete `app`.
 - `:app`: indica que debe utilizar el objeto llamado `app` definido en `main.py`.
 - `--reload`: reinicia el servidor automáticamente cuando detecta cambios en los archivos de código. Esta opción se utiliza durante el desarrollo, no como configuración de producción.
+
+### Inicio rápido en Windows (PowerShell)
+
+Desde la raíz del repositorio, prepará el backend una sola vez:
+
+```powershell
+cd vet_back
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+Luego, en una terminal PowerShell, levantá el backend:
+
+```powershell
+cd vet_back
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+En una segunda terminal, desde la raíz, instalá y levantá el frontend:
+
+```powershell
+cd vet_front
+npm install
+npm run dev
+```
+
+Abrí `http://localhost:3000`. El backend está en `http://127.0.0.1:8000`; `/health` permite confirmar la conexión y `/docs` muestra la API. Para cambiar el destino del proxy del frontend, definir `VITE_API_PROXY_TARGET` en `vet_front/.env.local` (por ejemplo `http://127.0.0.1:8000`) y reiniciar Vite.
+
+**Alcance de la conexión actual:** el frontend consulta `/health` y Vite reenvía `/api/*` al backend. Los formularios y datos de los módulos siguen usando mocks y `localStorage`; todavía no consumen los endpoints de negocio ni persisten cambios en SQLite.
 
 Si todo funciona correctamente, Uvicorn mostrará un mensaje indicando que el servidor está ejecutándose, normalmente en:
 
@@ -308,6 +337,10 @@ npm run dev
 4. Abrir el navegador en la dirección indicada por Vite:
 👉 `http://localhost:3000`
 
+El frontend reenvía `/api/*` y `/health` al backend (`http://127.0.0.1:8000`). Si el backend está en otra dirección, crear `vet_front/.env.local` con `VITE_API_PROXY_TARGET=http://host:puerto` y reiniciar Vite.
+
+El indicador **API disponible** del encabezado comprueba `/health`. Esta comprobación confirma conectividad, pero los módulos de negocio del frontend todavía usan datos demo guardados en `localStorage`: las acciones de los formularios no están persistidas en la API.
+
 ### Compilación y verificación para producción
 
 Para validar los tipos TypeScript y generar el paquete estático optimizado para producción:
@@ -331,7 +364,7 @@ Los artefactos listos para desplegar se generarán en `vet_front/dist/`.
 
 El proyecto utilizará SQLite como sistema de gestión de base de datos y SQLAlchemy como ORM.
 
-La configuración de conexión se centralizará en el módulo correspondiente dentro de `backend/app/db/`.
+La configuración de conexión se centraliza en `vet_back/app/db/`.
 
 La aplicación utilizará un `engine` compartido y una fábrica de sesiones para administrar las operaciones contra la base de datos.
 

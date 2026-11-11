@@ -40,6 +40,8 @@ npm run dev
 El servidor quedará disponible por defecto en:
 👉 `http://localhost:3000` (o el puerto indicado por Vite en consola).
 
+Vite reenvía las rutas `/api/*` y `/health` al backend en `http://127.0.0.1:8000`. Para cambiar el destino, configurar `VITE_API_PROXY_TARGET` en `vet_front/.env.local` y reiniciar el servidor. El encabezado muestra el estado de `/health`; las operaciones de los módulos aún usan datos demo en `localStorage` y no escriben en la API.
+
 ---
 
 ## 📦 Compilación para producción
