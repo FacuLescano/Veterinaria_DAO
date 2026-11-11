@@ -34,7 +34,11 @@ Uno de los aspectos principales del proyecto es garantizar la integridad de la i
 
 ### Frontend
 
-La estructura del repositorio contempla una carpeta independiente para el frontend. La tecnología y su configuración se definirán durante la etapa de desarrollo de la interfaz.
+- **React 18:** librería para la construcción de interfaces de usuario interactivas basadas en componentes.
+- **TypeScript:** tipado estático, interfaces de dominio y verificación en tiempo de desarrollo.
+- **Vite:** entorno de desarrollo de última generación con recarga ultrarrápida (HMR) y empaquetador para producción.
+- **Tailwind CSS v4:** estilos utilitarios modernos y diseño responsivo adaptado a dispositivos de escritorio y móviles.
+- **Lucide React:** iconografía especializada para interfaces médicas, veterinarias y de laboratorio.
 
 ## 3. Estructura del repositorio
 
@@ -44,9 +48,8 @@ veterinaria/
 ├── .gitignore
 ├── .env.example
 ├── docs/
-├── backend/
+├── vet_back/
 │   ├── app/
-│   │   ├── __init__.py
 │   │   ├── main.py
 │   │   ├── api/
 │   │   ├── core/
@@ -55,19 +58,39 @@ veterinaria/
 │   │   ├── services/
 │   │   ├── dao/
 │   │   └── db/
-│   ├── tests/
+│   ├── test/
 │   ├── requirements.txt
 │   └── .env.example
-└── frontend/
+└── vet_front/
+    ├── README.md
+    ├── package.json
+    ├── vite.config.ts
+    ├── tsconfig.json
+    ├── index.html
+    ├── public/
+    └── src/
+        ├── components/
+        ├── context/
+        ├── data/
+        └── types/
 ```
 
 ### Responsabilidad de las carpetas
 
 | Carpeta o archivo | Responsabilidad |
 |---|---|
-| `backend/app/main.py` | Punto de entrada de la aplicación FastAPI. |
-| `backend/app/api/` | Definición y organización de los endpoints de la API. |
-| `backend/app/core/` | Configuraciones generales y componentes transversales. |
+| `vet_back/app/main.py` | Punto de entrada de la aplicación FastAPI. |
+| `vet_back/app/api/` | Definición y organización de los endpoints de la API. |
+| `vet_back/app/core/` | Configuraciones generales y componentes transversales. |
+| `vet_back/app/models/` | Definición de las entidades del modelo de datos con SQLAlchemy. |
+| `vet_back/app/schemas/` | Esquemas de validación de solicitudes y respuestas con Pydantic. |
+| `vet_back/app/services/` | Reglas de negocio y lógica de aplicación. |
+| `vet_back/app/dao/` | Acceso a datos y persistencia. |
+| `vet_back/app/db/` | Configuración del motor y la sesión de base de datos. |
+| `vet_back/test/` | Pruebas automatizadas unitarias y de integración. |
+| `vet_front/src/components/` | Componentes visuales organizados por módulo (pacientes, órdenes, despacho, recepción). |
+| `vet_front/src/context/` | Estado global de la aplicación (VeterinaryContext) con persistencia en localStorage. |
+| `vet_front/src/types/` | Definiciones TypeScript del dominio veterinario y trazabilidad. |
 | `backend/app/models/` | Modelos de dominio y entidades mapeadas con SQLAlchemy. |
 | `backend/app/schemas/` | Esquemas de validación y estructuras de entrada y salida de la API. |
 | `backend/app/services/` | Reglas de negocio y coordinación de operaciones. |
@@ -253,7 +276,58 @@ Swagger UI permite visualizar los endpoints disponibles, consultar sus parámetr
 
 La documentación se genera automáticamente a partir de los endpoints y esquemas definidos en FastAPI.
 
-## 7. Base de datos
+## 7. Configuración y ejecución del frontend (`vet_front`)
+
+La aplicación web frontend de **Patitas & Co.** está desarrollada en **React 18** con **TypeScript**, **Vite** y **Tailwind CSS v4**. Permite operar los 4 módulos funcionales del sistema con interfaz gráfica moderna y responsiva.
+
+### Requisitos previos
+
+- **Node.js**: versión 18 o superior instalada (verificar con `node -v`).
+- **npm**: versión 9 o superior (verificar con `npm -v`).
+
+### Paso a paso para ejecutar el frontend
+
+1. Abrir una nueva terminal y navegar a la carpeta `vet_front/`:
+
+```powershell
+cd vet_front
+```
+
+2. Instalar las dependencias del proyecto:
+
+```powershell
+npm install
+```
+
+3. Iniciar el servidor de desarrollo local:
+
+```powershell
+npm run dev
+```
+
+4. Abrir el navegador en la dirección indicada por Vite:
+👉 `http://localhost:3000`
+
+### Compilación y verificación para producción
+
+Para validar los tipos TypeScript y generar el paquete estático optimizado para producción:
+
+```powershell
+npm run build
+```
+
+Los artefactos listos para desplegar se generarán en `vet_front/dist/`.
+
+### Módulos funcionales disponibles en la interfaz
+
+| Módulo | Funcionalidades principales |
+|---|---|
+| **1. Pacientes & Atención** | Alta y edición de responsables y mascotas, agenda de turnos con validación de superposición horaria, registro de consultas e historia clínica. |
+| **2. Órdenes & Muestras** | Emisión de solicitudes de análisis clínicos vinculadas a consultas, extracción y rotulado de tubos/muestras biológicas y trazabilidad de estados. |
+| **3. Despacho & Trazabilidad** | Preparación de conservadoras isotérmicas, asignación y validación de precintos sanitarios y generación/impresión del Remito Biológico oficial. |
+| **4. Recepción & Resultados** | Recepción de envíos en laboratorio central, verificación de precinto (rechazo automático si está violado), registro de incidencias y carga de informes de análisis. |
+
+## 8. Base de datos
 
 El proyecto utilizará SQLite como sistema de gestión de base de datos y SQLAlchemy como ORM.
 
@@ -267,7 +341,7 @@ La base de datos local tendrá un archivo con extensión `.db`, cuya ubicación 
 
 **Nota:** instalar SQLAlchemy no crea automáticamente las tablas. Para disponer del esquema completo será necesario implementar los modelos y el mecanismo de creación o migración correspondiente. Hasta que esto se configure, la API puede ejecutarse sin tener todas las tablas creadas.
 
-## 8. Ejecutar las pruebas
+## 9. Ejecutar las pruebas
 
 Las pruebas automatizadas se almacenarán en `backend/tests/`.
 
@@ -285,7 +359,7 @@ pytest -v
 
 Las pruebas se irán incorporando a medida que se implementen los servicios, DAO y endpoints.
 
-## 9. Flujo de trabajo con Git
+## 10. Flujo de trabajo con Git
 
 Se utilizará Git para versionar el código y GitHub para alojar el repositorio y facilitar la colaboración.
 
@@ -323,7 +397,7 @@ Los nombres de ramas y el proceso de integración deberán respetar las convenci
 
 No deben versionarse la carpeta `.venv/`, los archivos `.env`, las bases de datos locales ni otros archivos generados que estén excluidos en `.gitignore`.
 
-## 10. Convenciones de desarrollo
+## 11. Convenciones de desarrollo
 
 Para mantener una estructura consistente, se recomienda:
 
@@ -336,7 +410,7 @@ Para mantener una estructura consistente, se recomienda:
 - Documentar las decisiones de diseño y las reglas de negocio relevantes.
 - No guardar credenciales ni datos sensibles directamente en el código fuente.
 
-## 11. Alcance funcional
+## 12. Alcance funcional
 
 El sistema se desarrollará de forma incremental, priorizando los procesos principales del dominio veterinario:
 
@@ -351,7 +425,7 @@ El sistema se desarrollará de forma incremental, priorizando los procesos princ
 
 Se deberá preservar el historial de estados de las muestras para permitir su seguimiento desde la extracción hasta el análisis o rechazo.
 
-## 12. Estado del proyecto
+## 13. Estado del proyecto
 
 El backend incluye el módulo 1 de pacientes y atención veterinaria, el módulo 2 de órdenes y muestras y el módulo 3 de preparación, despacho y trazabilidad de envíos. La recepción informada y los resultados externos corresponden al módulo 4; la operación interna del laboratorio queda fuera del alcance.
 

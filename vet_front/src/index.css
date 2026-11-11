@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  
+  --color-vet-primary: #2D5864;
+  --color-vet-primary-hover: #23454f;
+  --color-vet-secondary: #5F8E9C;
+  --color-vet-secondary-light: #eaf1f3;
+  --color-vet-cream: #F2E8D8;
+  --color-vet-cream-light: #FAF6EF;
+  --color-vet-stone: #B8AEA2;
+  --color-vet-slate: #8C8C91;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #FAF8F5;
+  color: #1f2937;
+  -webkit-font-smoothing: antialiased;
+}
+
+@media print {
+  @page {
+    size: auto;
+    margin: 6mm;
+  }
+
+  body {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Ocultar elementos generales de la app en la impresion */
+  header,
+  footer,
+  aside,
+  nav,
+  button,
+  .print\:hidden,
+  .no-print,
+  [aria-label="Cerrar modal"] {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+
+  /* Rótulo / Sticker imprimible */
+  #remito-sticker-printable {
+    display: block !important;
+    visibility: visible !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
+    padding: 14px !important;
+    box-sizing: border-box !important;
+    border: 2px dashed #000000 !important;
+    border-radius: 8px !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  #remito-sticker-printable * {
+    visibility: visible !important;
+  }
+}
