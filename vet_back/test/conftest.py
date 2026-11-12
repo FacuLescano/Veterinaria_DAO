@@ -18,9 +18,9 @@ from app.main import app
 from app.models.orden_analisis import TipoAnalisis, TipoMuestra
 
 try:
-    from app.models.patient import Consulta, Mascota, Responsable, Veterinario
+    from app.models.paciente import Consulta, Mascota, Responsable, Veterinario
 except ImportError:
-    from app.models.patient import (
+    from app.models.paciente import (
         Consultation as Consulta,
         Pet as Mascota,
         Responsible as Responsable,

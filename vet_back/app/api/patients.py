@@ -14,7 +14,7 @@ from app.schemas.patient import (
     LecturaNotificacionVeterinario,
 )
 from app.models.notificacion import NotificacionVeterinario
-from app.models.patient import Veterinario
+from app.models.paciente import Veterinario
 from app.services.patient_service import PatientService
 
 router = APIRouter(prefix="/api/v1", tags=["Pacientes y atención"])

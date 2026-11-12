@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models.patient import (
+from app.models.paciente import (
     Consulta, HistorialResponsableMascota, HistorialTurno, Mascota,
     Responsable, Turno, Veterinario,
 )

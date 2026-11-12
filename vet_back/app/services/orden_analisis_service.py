@@ -16,7 +16,7 @@ from app.models.orden_analisis import (
     TipoAnalisis,
     TipoMuestra,
 )
-from app.models.patient import Consulta, Veterinario
+from app.models.paciente import Consulta, Veterinario
 from app.schemas.orden_analisis import (
     AsociarMuestraAnalisisCreate,
     ConfigurarCompatibilidadCreate,

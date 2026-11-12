@@ -9,7 +9,7 @@ from app.models.orden_analisis import (
     Muestra,
     OrdenAnalisis,
 )
-from app.models.patient import Consulta
+from app.models.paciente import Consulta
 from app.schemas.envio import (
     ConservadoraCreate,
     DespachoCreate,

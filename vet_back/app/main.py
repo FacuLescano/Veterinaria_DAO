@@ -11,9 +11,10 @@ from app.api.recepcion import enrutador as recepcion_router
 from app.db.session import Base, engine
 from app.db.recepcion import inicializar_base as inicializar_base_recepcion
 from app.models import envio  # Registra las entidades de despacho en el metadata.
-from app.models import orden_analisis, patient  # Registra las entidades en el metadata de SQLAlchemy.
+from app.models import orden_analisis  # Registra las entidades en el metadata de SQLAlchemy.
 from app.models import notificacion  # Registra la bandeja de notificaciones del veterinario.
 from app.observers.muestra import NotificarVeterinario, estado_muestra
+from app.models import paciente
 
 estado_muestra.suscribir(NotificarVeterinario())
 

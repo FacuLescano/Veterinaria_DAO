@@ -6,7 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
 from app.domain.estados_muestra import EstadoMuestra, TransicionMuestraInvalida, crear_estado_muestra
-from app.models.patient import Consulta, Veterinario
+from app.models.paciente import Consulta, Veterinario
 
 # Tabla asociativa para definir tipos de muestra compatibles con cada tipo de análisis (US-09)
 tipo_analisis_tipos_muestra = Table(
