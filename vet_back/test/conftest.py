@@ -15,6 +15,8 @@ except ImportError:
     from app.db.session import Base as ModeloBase, get_db as obtener_sesion_bd
 
 from app.main import app
+from app.db.recepcion import BaseModulo4
+from app.models import recepcion as modelos_recepcion
 from app.models.orden_analisis import TipoAnalisis, TipoMuestra
 
 try:
@@ -42,7 +44,9 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 def setup_database():
     """Crea las tablas antes de cada test y las limpia al terminar."""
     ModeloBase.metadata.create_all(bind=engine)
+    BaseModulo4.metadata.create_all(bind=engine)
     yield
+    BaseModulo4.metadata.drop_all(bind=engine)
     ModeloBase.metadata.drop_all(bind=engine)
 
 

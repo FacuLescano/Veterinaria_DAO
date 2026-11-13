@@ -8,6 +8,7 @@ import { Modulo2OrdenesMuestras } from './components/modules/Modulo2OrdenesMuest
 import { Modulo3PreparacionDespacho } from './components/modules/Modulo3PreparacionDespacho';
 import { Modulo4RecepcionResultados } from './components/modules/Modulo4RecepcionResultados';
 import { ModuloPythonExport } from './components/modules/ModuloPythonExport';
+import { BandejaNotificaciones } from './components/modules/BandejaNotificaciones';
 import { ArrowLeft, BookOpen } from 'lucide-react';
 
 const AppContent: React.FC = () => {
@@ -77,6 +78,7 @@ const AppContent: React.FC = () => {
           {activeModule === 'ordenes' && <Modulo2OrdenesMuestras />}
           {activeModule === 'despacho' && <Modulo3PreparacionDespacho />}
           {activeModule === 'recepcion' && <Modulo4RecepcionResultados />}
+          {activeModule === 'notificaciones' && <BandejaNotificaciones />}
         </main>
 
         {/* Minimal Footer */}

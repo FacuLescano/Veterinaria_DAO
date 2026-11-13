@@ -9,7 +9,8 @@ import {
   PanelLeftClose, 
   PanelLeftOpen, 
   X,
-  AlertTriangle
+  AlertTriangle,
+  Bell
 } from 'lucide-react';
 
 interface NavItem {
@@ -69,6 +70,12 @@ export const Sidebar: React.FC = () => {
       icon: ClipboardCheck,
       badgeCount: incidenciasActivas > 0 ? incidenciasActivas : undefined,
       badgeAlert: incidenciasActivas > 0
+    },
+    {
+      id: 'notificaciones',
+      label: 'Notificaciones',
+      shortLabel: 'Avisos',
+      icon: Bell
     }
   ];
 

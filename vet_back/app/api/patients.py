@@ -24,6 +24,29 @@ def get_service(db: Session = Depends(obtener_sesion_bd)) -> PatientService:
     return PatientService(db)
 
 
+@router.get("/notificaciones", response_model=list[LecturaNotificacionVeterinario])
+def listar_notificaciones(solo_no_leidas: bool = False, db: Session = Depends(obtener_sesion_bd)):
+    # La bandeja general solo contiene los avisos del evento de verificación del precinto.
+    consulta = select(NotificacionVeterinario).where(
+        NotificacionVeterinario.estado_nuevo.in_(["aceptada", "rechazada"])
+    )
+    if solo_no_leidas:
+        consulta = consulta.where(NotificacionVeterinario.leida_en.is_(None))
+    return db.scalars(consulta.order_by(NotificacionVeterinario.creada_en.desc())).all()
+
+
+@router.patch("/notificaciones/{notificacion_id}/leida", response_model=LecturaNotificacionVeterinario)
+def marcar_notificacion_leida(notificacion_id: int, db: Session = Depends(obtener_sesion_bd)):
+    notificacion = db.get(NotificacionVeterinario, notificacion_id)
+    if notificacion is None:
+        raise HTTPException(status_code=404, detail="Notificación no encontrada")
+    if notificacion.leida_en is None:
+        notificacion.leida_en = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(notificacion)
+    return notificacion
+
+
 @router.post("/responsables", response_model=LecturaResponsable, status_code=status.HTTP_201_CREATED)
 def crear_responsable(payload: CrearResponsable, service: PatientService = Depends(get_service)):
     return service.crear_responsable(payload)

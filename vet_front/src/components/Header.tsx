@@ -52,6 +52,10 @@ export const Header: React.FC<HeaderProps> = ({ onOpenQuickNew }) => {
       title: 'Módulo 4: Recepción, Precintos y Resultados',
       subtitle: 'Verificación de integridad, gestión de incidencias e informes'
     },
+    notificaciones: {
+      title: 'Bandeja general de notificaciones',
+      subtitle: 'Recepción de muestras y novedades de laboratorio'
+    },
     python: {
       title: 'Código Python & GUI Tkinter (Cátedra)',
       subtitle: 'Implementación POO y formularios según material conceptual 2026'

@@ -18,7 +18,7 @@ import {
   TipoAnalisis
 } from '../types/veterinaria';
 
-export type ActiveModule = 'pacientes' | 'ordenes' | 'despacho' | 'recepcion' | 'python';
+export type ActiveModule = 'pacientes' | 'ordenes' | 'despacho' | 'recepcion' | 'notificaciones' | 'python';
 
 interface ToastMessage {
   id: string;
