@@ -1,6 +1,6 @@
 from dataclasses import dataclass
+from abc import ABC, abstractmethod
 import logging
-from typing import Protocol
 
 from sqlalchemy.orm import Session
 
@@ -26,8 +26,10 @@ class ResultadoAnalisisRegistrado:
         return ",".join(self.resultado_ids)
 
 
-class ObservadorResultados(Protocol):
-    def actualizar_resultados(self, evento: ResultadosRegistrados | ResultadoAnalisisRegistrado, sesion: Session) -> None: ...
+class ObservadorResultados(ABC):
+    @abstractmethod
+    def actualizar_resultados(self, evento: ResultadosRegistrados | ResultadoAnalisisRegistrado, sesion: Session) -> None:
+        """Reacciona al registro de uno o varios resultados de análisis."""
 
 
 class SujetoResultados:
@@ -43,11 +45,11 @@ class SujetoResultados:
             observador.actualizar_resultados(evento, sesion)
 
 
-class ResponsableMascotaObserver:
+class ResponsableMascotaObserver(ObservadorResultados):
     def __init__(self, servicio_correo: ServicioCorreo | None = None) -> None:
         self.servicio_correo = servicio_correo or ServicioCorreo()
 
-    def actualizar_resultados(self, evento: ResultadosRegistrados, sesion: Session) -> None:
+    def actualizar_resultados(self, evento: ResultadosRegistrados | ResultadoAnalisisRegistrado, sesion: Session) -> None:
         from app.models.paciente import Mascota, Responsable
 
         try:

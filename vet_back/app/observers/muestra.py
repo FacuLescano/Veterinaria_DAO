@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from abc import ABC, abstractmethod
 
 from sqlalchemy.orm import Session
 
@@ -18,8 +18,10 @@ class CambioEstadoMuestra:
     motivo: str | None
 
 
-class ObservadorEstadoMuestra(Protocol):
-    def actualizar(self, evento: CambioEstadoMuestra, sesion: Session) -> None: ...
+class ObservadorEstadoMuestra(ABC):
+    @abstractmethod
+    def actualizar(self, evento: CambioEstadoMuestra, sesion: Session) -> None:
+        """Procesa un cambio de estado de una muestra."""
 
 
 class SujetoEstadoMuestra:
@@ -38,7 +40,7 @@ class SujetoEstadoMuestra:
             observador.actualizar(evento, sesion)
 
 
-class NotificarVeterinario:
+class NotificarVeterinario(ObservadorEstadoMuestra):
     """Guarda una notificación en la bandeja del veterinario responsable."""
 
     def actualizar(self, evento: CambioEstadoMuestra, sesion: Session) -> None:
@@ -78,8 +80,10 @@ class RecepcionMuestra:
     mensaje: str
 
 
-class ObservadorRecepcion(Protocol):
-    def actualizar_recepcion(self, evento: RecepcionMuestra, sesion: Session) -> None: ...
+class ObservadorRecepcion(ABC):
+    @abstractmethod
+    def actualizar_recepcion(self, evento: RecepcionMuestra, sesion: Session) -> None:
+        """Procesa la recepción verificada de una muestra."""
 
 
 class SujetoRecepcionMuestra:
@@ -95,7 +99,7 @@ class SujetoRecepcionMuestra:
             observador.actualizar_recepcion(evento, sesion)
 
 
-class VeterinarioObserver:
+class VeterinarioObserver(ObservadorRecepcion):
     """Persiste en la bandeja compartida la recepción de cada muestra."""
 
     def actualizar_recepcion(self, evento: RecepcionMuestra, sesion: Session) -> None:
