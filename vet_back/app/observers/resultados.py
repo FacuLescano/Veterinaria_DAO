@@ -15,8 +15,19 @@ class ResultadosRegistrados:
     paciente_id: str
 
 
+@dataclass(frozen=True)
+class ResultadoAnalisisRegistrado:
+    """Evento único para una recepción que puede contener varios análisis."""
+    resultado_ids: tuple[str, ...]
+    paciente_id: str
+
+    @property
+    def resultado_id(self) -> str:
+        return ",".join(self.resultado_ids)
+
+
 class ObservadorResultados(Protocol):
-    def actualizar_resultados(self, evento: ResultadosRegistrados, sesion: Session) -> None: ...
+    def actualizar_resultados(self, evento: ResultadosRegistrados | ResultadoAnalisisRegistrado, sesion: Session) -> None: ...
 
 
 class SujetoResultados:
@@ -27,7 +38,7 @@ class SujetoResultados:
         if not any(actual is observador for actual in self._observadores):
             self._observadores.append(observador)
 
-    def notificar(self, evento: ResultadosRegistrados, sesion: Session) -> None:
+    def notificar(self, evento: ResultadosRegistrados | ResultadoAnalisisRegistrado, sesion: Session) -> None:
         for observador in tuple(self._observadores):
             observador.actualizar_resultados(evento, sesion)
 

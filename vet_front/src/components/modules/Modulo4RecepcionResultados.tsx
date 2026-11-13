@@ -27,11 +27,13 @@ export const Modulo4RecepcionResultados: React.FC = () => {
     resultados,
     verificarPrecintoYRecepcion,
     registrarResultado,
+    recibirResultadosLaboratorio,
     resolverIncidencia,
     showToast
   } = useVeterinaria();
 
   const [activeTab, setActiveTab] = useState<'recepcion' | 'resultados' | 'incidencias'>('recepcion');
+  const [escenarioMock, setEscenarioMock] = useState('multiples');
 
   // Modals
   const [isVerificarModalOpen, setIsVerificarModalOpen] = useState(false);
@@ -199,13 +201,25 @@ export const Modulo4RecepcionResultados: React.FC = () => {
 
         <div className="flex items-center gap-2">
           {activeTab === 'resultados' && (
-            <button
-              onClick={() => setIsCargarResultadoModalOpen(true)}
-              className="px-3 py-2 text-xs font-semibold text-white bg-[#2D5864] hover:bg-[#23454f] rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              <span>Cargar Resultado Externo</span>
-            </button>
+            <>
+              <label className="text-[11px] text-neutral-600 flex items-center gap-2">
+                Escenario de demostración
+                <select value={escenarioMock} onChange={e => setEscenarioMock(e.target.value)} className="rounded-lg border border-neutral-200 bg-white px-2 py-2 text-xs">
+                  <option value="multiples">Resultados disponibles</option>
+                  <option value="completo">Todos los análisis listos</option>
+                  <option value="pendientes">Pendientes</option>
+                  <option value="sin_resultados">Sin resultados</option>
+                  <option value="invalido">Respuesta inválida</option>
+                </select>
+              </label>
+              <button
+                onClick={() => setIsCargarResultadoModalOpen(true)}
+                className="px-3 py-2 text-xs font-semibold text-white bg-[#2D5864] hover:bg-[#23454f] rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Carga manual</span>
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -298,6 +312,27 @@ export const Modulo4RecepcionResultados: React.FC = () => {
       {/* TAB 2: RESULTADOS DE LABORATORIO */}
       {activeTab === 'resultados' && (
         <div className="space-y-4">
+          <section className="rounded-xl border border-[#E7E2DA] bg-white p-4 shadow-xs">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-[#2D5864]">Consultar resultados del laboratorio externo</h4>
+            <p className="mt-1 text-[11px] text-neutral-500">Solo se consultan muestras con recepción verificada y estado Recibida.</p>
+            <div className="mt-3 space-y-2">
+              {muestras.filter(m => m.estadoActual === 'Recibida').map(muestra => {
+                const orden = ordenes.find(o => o.id === muestra.ordenId);
+                const analisis = orden?.detalles.filter(d => d.muestraAsociadaId === muestra.id).map(d => d.tipoAnalisis).join(', ') || 'Análisis asociados';
+                return <div key={muestra.id} className="flex flex-col gap-2 rounded-lg border border-neutral-100 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div><strong className="font-mono text-xs text-neutral-800">{muestra.id}</strong><p className="text-[11px] text-neutral-500">{analisis}</p></div>
+                  <button
+                    onClick={async () => {
+                      try { await recibirResultadosLaboratorio(muestra.id, escenarioMock); }
+                      catch (error) { showToast({ type: 'error', title: 'No se pudieron recibir los resultados', description: error instanceof Error ? error.message : 'Verificá la respuesta del laboratorio.' }); }
+                    }}
+                    className="rounded-lg bg-[#2D5864] px-3 py-2 text-xs font-semibold text-white hover:bg-[#23454f]"
+                  >Consultar y registrar resultados</button>
+                </div>;
+              })}
+              {!muestras.some(m => m.estadoActual === 'Recibida') && <p className="text-xs text-neutral-500">No hay muestras recibidas pendientes de resultados.</p>}
+            </div>
+          </section>
           <div className="grid grid-cols-1 gap-4">
             {resultados.map(res => {
               const pet = mascotas.find(m => m.id === 'MASC-001'); // fallback / match

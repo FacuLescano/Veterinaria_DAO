@@ -5,8 +5,9 @@ from fastapi import HTTPException
 from app.models.recepcion import Incidencia, RecepcionEnvio, ResultadoAnalisis, VerificacionPrecinto
 from app.models.envio import Envio
 from app.models.orden_analisis import DetalleOrdenAnalisis, Muestra, OrdenAnalisis
+from app.core.laboratorio_gateway import LaboratorioMock, RespuestaLaboratorio
 from app.observers.muestra import RecepcionMuestra, publicar_recepcion_muestra
-from app.observers.resultados import ResultadosRegistrados, resultados_analisis
+from app.observers.resultados import ResultadoAnalisisRegistrado, ResultadosRegistrados, resultados_analisis
 import logging
 
 logger = logging.getLogger(__name__)
@@ -162,6 +163,119 @@ def registrar_resultado(sesion: Session, datos):
     except Exception:
         logger.exception("No se pudo publicar el evento de resultados %s", resultado.id)
     return resultado
+
+
+def _consultar_gateway(sesion: Session, muestra_id: str, gateway, escenario: str) -> tuple[Muestra, RespuestaLaboratorio]:
+    try:
+        muestra = sesion.get(Muestra, int(muestra_id))
+    except (TypeError, ValueError):
+        muestra = None
+    if not muestra:
+        raise HTTPException(404, "No se encontró la muestra")
+    analisis = [
+        {"detalle_id": str(asociacion.detalle.id), "nombre": asociacion.detalle.tipo_analisis.nombre}
+        for asociacion in muestra.asociaciones_detalles
+    ]
+    if not analisis:
+        raise HTTPException(422, "La muestra no tiene análisis asociados")
+    try:
+        respuesta = gateway.consultar_resultados(str(muestra.id), analisis, escenario)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return muestra, respuesta
+
+
+def _validar_respuesta_laboratorio(muestra: Muestra, respuesta: RespuestaLaboratorio):
+    if respuesta.muestra_id != str(muestra.id):
+        raise HTTPException(422, "La respuesta del laboratorio no corresponde a la muestra solicitada")
+    if respuesta.estado == "sin_resultados":
+        return {"estado": "sin_resultados", "muestra_id": str(muestra.id), "mensaje": respuesta.mensaje, "resultados": []}
+    if respuesta.estado == "pendiente":
+        return {"estado": "pendiente", "muestra_id": str(muestra.id), "mensaje": respuesta.mensaje, "resultados": []}
+    if respuesta.estado != "disponible":
+        raise HTTPException(422, "La respuesta del laboratorio no corresponde a la muestra solicitada")
+    if not respuesta.resultados:
+        raise HTTPException(422, "La respuesta del laboratorio no contiene resultados")
+    esperados = {str(asociacion.detalle.id) for asociacion in muestra.asociaciones_detalles}
+    recibidos = [str(r.detalle_id) for r in respuesta.resultados]
+    if len(set(recibidos)) != len(recibidos) or set(recibidos) != esperados:
+        raise HTTPException(422, "Los análisis recibidos no coinciden con los asociados a la muestra")
+    for resultado in respuesta.resultados:
+        if not isinstance(resultado.valores, list) or not resultado.valores or any(
+            not isinstance(v, dict) or not all(isinstance(v.get(campo), str) and v[campo].strip() for campo in ("parametro", "valor", "unidad", "rangoReferencia"))
+            for v in resultado.valores
+        ) or not isinstance(resultado.conclusion, str) or not resultado.conclusion.strip():
+            raise HTTPException(422, "La respuesta del laboratorio contiene datos incompletos")
+    return {"estado": "disponible", "muestra_id": str(muestra.id), "mensaje": respuesta.mensaje, "resultados": respuesta.resultados}
+
+
+def consultar_resultados_laboratorio(sesion: Session, muestra_id: str, gateway=None, escenario: str = "multiples"):
+    """Consulta la dependencia externa y valida identidad y estructura de su respuesta."""
+    muestra, respuesta = _consultar_gateway(sesion, muestra_id, gateway or LaboratorioMock(), escenario)
+    return _validar_respuesta_laboratorio(muestra, respuesta)
+
+
+def recibir_resultados_laboratorio(sesion: Session, muestra_id: str, gateway=None, escenario: str = "multiples"):
+    """Valida y persiste todos los resultados de una muestra en una sola operación."""
+    try:
+        muestra = sesion.get(Muestra, int(muestra_id))
+    except (TypeError, ValueError):
+        muestra = None
+    if not muestra:
+        raise HTTPException(404, "No se encontró la muestra")
+    if muestra.estado != "recibida":
+        raise HTTPException(409, "Solo se pueden recibir resultados para muestras recibidas")
+    muestra, respuesta_gateway = _consultar_gateway(sesion, muestra_id, gateway or LaboratorioMock(), escenario)
+    consulta = _validar_respuesta_laboratorio(muestra, respuesta_gateway)
+    if consulta["estado"] != "disponible":
+        return consulta
+    orden = muestra.orden
+    paciente_id = orden.consulta.pet_id if orden and orden.consulta else None
+    if paciente_id is None:
+        raise HTTPException(422, "No se pudo resolver el paciente asociado a la muestra")
+    detalles = {str(a.detalle.id): a.detalle for a in muestra.asociaciones_detalles}
+    detalle_ids = [str(resultado.detalle_id) for resultado in consulta["resultados"]]
+    existentes = sesion.scalars(select(ResultadoAnalisis.id).where(
+        ResultadoAnalisis.orden_id == str(orden.id),
+        ResultadoAnalisis.detalle_orden_id.in_(detalle_ids),
+    )).all()
+    if existentes:
+        raise HTTPException(409, "Ya existen resultados para uno o más análisis de esta muestra")
+    fecha = respuesta_gateway.fecha_recepcion
+    creados = []
+    try:
+        for externo in consulta["resultados"]:
+            detalle = detalles[str(externo.detalle_id)]
+            informe_nombre = f"MOCK-{muestra.id}-{detalle.id}.json"
+            resultado = ResultadoAnalisis(
+                orden_id=str(orden.id), detalle_orden_id=str(detalle.id), muestra_id=str(muestra.id),
+                paciente_id=str(paciente_id), fecha_recepcion=fecha, procedencia="Laboratorio externo simulado",
+                estado="recibido", datos={"valores": externo.valores, "conclusionDiagnostica": externo.conclusion},
+                informe_nombre=informe_nombre, registrado_por="LaboratorioMock",
+            )
+            sesion.add(resultado)
+            detalle.estado = "resultado_listo"
+            creados.append(resultado)
+        muestra.registrar_analisis(
+            f"mock:{muestra.id}", responsable="Integración de resultados",
+            motivo="Resultados externos recibidos", fecha_evento=fecha,
+        )
+        if all(d.estado == "resultado_listo" for d in orden.detalles):
+            orden.estado = "con_resultados"
+        sesion.flush()
+        sesion.commit()
+        for resultado in creados:
+            sesion.refresh(resultado)
+    except Exception:
+        sesion.rollback()
+        raise
+    try:
+        resultados_analisis.notificar(
+            ResultadoAnalisisRegistrado(resultado_ids=tuple(str(r.id) for r in creados), paciente_id=str(paciente_id)), sesion
+        )
+    except Exception:
+        logger.exception("No se pudo publicar el evento de resultados de la muestra %s", muestra.id)
+    return {"estado": "registrado", "muestra_id": str(muestra.id), "resultados": creados}
 
 
 def actualizar_estado_resultado(sesion: Session, resultado: ResultadoAnalisis, estado: str):

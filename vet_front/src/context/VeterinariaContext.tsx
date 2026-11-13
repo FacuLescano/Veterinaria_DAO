@@ -79,6 +79,7 @@ interface VeterinariaContextType {
     observaciones?: string;
   }) => Promise<void>;
   registrarResultado: (resultado: Omit<ResultadoAnalisis, 'id'>) => Promise<ResultadoAnalisis>;
+  recibirResultadosLaboratorio: (muestraId: string, escenario: string) => Promise<void>;
   resolverIncidencia: (id: string, resolucion: string) => Promise<void>;
   reloadFromDatabase: () => void;
 }
@@ -672,6 +673,29 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
     return newResultado;
   };
 
+  const recibirResultadosLaboratorio = async (muestraId: string, escenario: string): Promise<void> => {
+    const respuesta = await api<any>(`/api/v1/muestras/${encodeURIComponent(muestraId)}/resultados-laboratorio?escenario=${encodeURIComponent(escenario)}`, { method: 'POST' });
+    if (respuesta.estado !== 'registrado') {
+      showToast({ type: 'warning', title: respuesta.estado === 'pendiente' ? 'Resultados pendientes' : 'Sin resultados', description: respuesta.mensaje || 'El laboratorio todavía no entregó resultados.' });
+      return;
+    }
+    const registrados: ResultadoAnalisis[] = respuesta.resultados.map((r: any) => ({
+      id: String(r.id), ordenId: String(r.orden_id), detalleAnalisisId: String(r.detalle_orden_id),
+      muestraId: String(r.muestra_id), fechaRecepcionResultado: fechaLocal(r.fecha_recepcion),
+      laboratorioNombre: r.procedencia, valores: r.datos?.valores || [],
+      conclusionDiagnostica: r.datos?.conclusionDiagnostica || '', nombreArchivoAdjunto: r.informe_nombre || undefined,
+      estado: 'Recibido', validadoPor: r.registrado_por,
+    }));
+    setResultados(prev => [...registrados, ...prev]);
+    setMuestras(prev => prev.map(m => m.id === muestraId ? { ...m, estadoActual: 'Analizada' } : m));
+    const detalleIds = new Set(registrados.map(r => r.detalleAnalisisId));
+    setOrdenes(prev => prev.map(o => {
+      const detalles = o.detalles.map(d => detalleIds.has(d.id) ? { ...d, estado: 'Resultado listo' as const } : d);
+      return { ...o, detalles, estado: detalles.every(d => d.estado === 'Resultado listo') ? 'Con resultados' : o.estado };
+    }));
+    showToast({ type: 'success', title: 'Resultados recibidos', description: `Se registraron ${registrados.length} resultado(s) del laboratorio para la muestra ${muestraId}.` });
+  };
+
   const resolverIncidencia = async (id: string, resolucion: string) => {
     await api(`/api/v1/incidencias/${id}/resolver`, { method: 'POST', body: JSON.stringify({ resolucion, responsable_resolucion_id: 'Laboratorio' }) });
     setIncidencias(prev => prev.map(inc => inc.id === id ? { ...inc, resuelto: true, resolucion } : inc));
@@ -728,6 +752,7 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
         prepararEnvio,
         verificarPrecintoYRecepcion,
         registrarResultado,
+        recibirResultadosLaboratorio,
         resolverIncidencia,
         reloadFromDatabase
       }}

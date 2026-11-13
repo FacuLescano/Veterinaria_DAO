@@ -11,8 +11,13 @@ from app.schemas.recepcion import (
 from app.models.recepcion import Incidencia, RecepcionEnvio, ResultadoAnalisis, VerificacionPrecinto
 from app.services import recepcion as servicios
 from app.core.recepcion_integracion import listar_envios_despachados
+from app.core.laboratorio_gateway import LaboratorioGateway, LaboratorioMock
 
 enrutador = APIRouter(tags=["Módulo 4: recepción y resultados"])
+
+
+def obtener_laboratorio_gateway() -> LaboratorioGateway:
+    return LaboratorioMock()
 
 
 @enrutador.get("/envios-pendientes")
@@ -103,6 +108,26 @@ def cargar_resultado(datos: ResultadoEntrada, sesion: Session = Depends(obtener_
     if resultado is None:
         raise HTTPException(409, "El informe de este análisis ya fue incorporado")
     return resultado
+
+
+@enrutador.get("/muestras/{muestra_id}/resultados-laboratorio")
+def consultar_resultados_laboratorio(
+    muestra_id: str,
+    escenario: str = Query(default="multiples"),
+    sesion: Session = Depends(obtener_sesion),
+    gateway: LaboratorioGateway = Depends(obtener_laboratorio_gateway),
+):
+    return servicios.consultar_resultados_laboratorio(sesion, muestra_id, gateway=gateway, escenario=escenario)
+
+
+@enrutador.post("/muestras/{muestra_id}/resultados-laboratorio")
+def recibir_resultados_laboratorio(
+    muestra_id: str,
+    escenario: str = Query(default="multiples"),
+    sesion: Session = Depends(obtener_sesion),
+    gateway: LaboratorioGateway = Depends(obtener_laboratorio_gateway),
+):
+    return servicios.recibir_resultados_laboratorio(sesion, muestra_id, gateway=gateway, escenario=escenario)
 
 
 @enrutador.get("/resultados")
