@@ -10,7 +10,8 @@ import {
   PanelLeftOpen, 
   X,
   AlertTriangle,
-  Bell
+  Bell,
+  BarChart3
 } from 'lucide-react';
 
 interface NavItem {
@@ -76,6 +77,12 @@ export const Sidebar: React.FC = () => {
       label: 'Notificaciones',
       shortLabel: 'Avisos',
       icon: Bell
+    },
+    {
+      id: 'reportes',
+      label: 'Reportes & Analítica',
+      shortLabel: 'Reportes',
+      icon: BarChart3
     }
   ];
 

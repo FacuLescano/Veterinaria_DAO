@@ -56,6 +56,10 @@ export const Header: React.FC<HeaderProps> = ({ onOpenQuickNew }) => {
       title: 'Bandeja general de notificaciones',
       subtitle: 'Recepción de muestras y novedades de laboratorio'
     },
+    reportes: {
+      title: 'Módulo 5: Reportes & Analítica de Gestión',
+      subtitle: 'Indicadores de nivel de servicio (SLA), logística y auditoría clínica'
+    },
     python: {
       title: 'Código Python & GUI Tkinter (Cátedra)',
       subtitle: 'Implementación POO y formularios según material conceptual 2026'

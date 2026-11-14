@@ -9,6 +9,7 @@ import { Modulo3PreparacionDespacho } from './components/modules/Modulo3Preparac
 import { Modulo4RecepcionResultados } from './components/modules/Modulo4RecepcionResultados';
 import { ModuloPythonExport } from './components/modules/ModuloPythonExport';
 import { BandejaNotificaciones } from './components/modules/BandejaNotificaciones';
+import { ModuloReportes } from './components/modules/ModuloReportes';
 import { ArrowLeft, BookOpen } from 'lucide-react';
 
 const AppContent: React.FC = () => {
@@ -79,6 +80,7 @@ const AppContent: React.FC = () => {
           {activeModule === 'despacho' && <Modulo3PreparacionDespacho />}
           {activeModule === 'recepcion' && <Modulo4RecepcionResultados />}
           {activeModule === 'notificaciones' && <BandejaNotificaciones />}
+          {activeModule === 'reportes' && <ModuloReportes />}
         </main>
 
         {/* Minimal Footer */}

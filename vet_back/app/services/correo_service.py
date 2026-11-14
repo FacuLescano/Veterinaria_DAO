@@ -82,6 +82,70 @@ class ServicioCorreo:
             return False
         return True
 
+    def enviar_reporte(
+        self,
+        destinatario: str,
+        asunto: str,
+        cuerpo_texto: str,
+        cuerpo_html: str | None = None,
+        adjuntos: list[tuple[str, bytes, str]] | None = None,
+        imagenes_relacionadas: list[tuple[str, bytes, str]] | None = None,
+    ) -> bool:
+        config = self.configuracion
+        if not config.disponible:
+            logger.warning("No se envió el reporte: SMTP no está configurado o SMTP_SECURITY no es válido")
+            return False
+
+        mensaje = EmailMessage()
+        mensaje["Subject"] = asunto
+        mensaje["From"] = config.remitente
+        mensaje["To"] = destinatario
+        mensaje.set_content(cuerpo_texto)
+
+        if cuerpo_html:
+            mensaje.add_alternative(cuerpo_html, subtype="html")
+            if imagenes_relacionadas:
+                try:
+                    html_part = mensaje.get_payload()[1]
+                    for cid_name, img_bytes, mime_type in imagenes_relacionadas:
+                        maintype, subtype = mime_type.split("/", 1) if "/" in mime_type else ("image", "png")
+                        html_part.add_related(img_bytes, maintype=maintype, subtype=subtype, cid=f"<{cid_name}>")
+                except Exception as err:
+                    logger.warning("No se pudieron adjuntar las imágenes relacionadas CID al correo: %s", err)
+
+        if adjuntos:
+            for nombre_archivo, contenido_bytes, mime_type in adjuntos:
+                if "/" in mime_type:
+                    maintype, subtype = mime_type.split("/", 1)
+                else:
+                    maintype, subtype = "application", "octet-stream"
+                mensaje.add_attachment(
+                    contenido_bytes,
+                    maintype=maintype,
+                    subtype=subtype,
+                    filename=nombre_archivo,
+                )
+
+        contexto_tls = ssl.create_default_context()
+
+        try:
+            if config.seguridad == "ssl":
+                with smtplib.SMTP_SSL(config.servidor, config.puerto, context=contexto_tls, timeout=25) as smtp:
+                    self._autenticar(smtp, config)
+                    smtp.send_message(mensaje)
+            else:
+                with smtplib.SMTP(config.servidor, config.puerto, timeout=25) as smtp:
+                    smtp.ehlo()
+                    if config.seguridad == "starttls":
+                        smtp.starttls(context=contexto_tls)
+                        smtp.ehlo()
+                    self._autenticar(smtp, config)
+                    smtp.send_message(mensaje)
+        except (OSError, smtplib.SMTPException) as error:
+            logger.error("No se pudo enviar el reporte por correo (%s): %s", type(error).__name__, error)
+            return False
+        return True
+
     @staticmethod
     def _autenticar(smtp, config: ConfiguracionSMTP) -> None:
         if config.usuario:

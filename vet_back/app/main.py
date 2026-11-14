@@ -10,6 +10,7 @@ from app.api.ordenes_analisis import router as ordenes_analisis_router
 from app.api.envios import router as envios_router
 from app.api.patients import router as patients_router
 from app.api.recepcion import enrutador as recepcion_router
+from app.api.reportes import router as reportes_router
 from app.db.session import Base, engine
 from app.db.recepcion import inicializar_base as inicializar_base_recepcion
 from app.models import envio  # Registra las entidades de despacho en el metadata.
@@ -53,6 +54,7 @@ app.include_router(patients_router)
 app.include_router(ordenes_analisis_router)
 app.include_router(envios_router)
 app.include_router(recepcion_router, prefix="/api/v1")
+app.include_router(reportes_router)
 
 @app.get("/")
 def inicio():
