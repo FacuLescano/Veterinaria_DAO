@@ -37,7 +37,7 @@ export const ReporteMuestrasRechazadas: React.FC = () => {
 
   // Modal Enviar por Correo
   const [modalEmail2Open, setModalEmail2Open] = useState(false);
-  const [emailDestinatario2, setEmailDestinatario2] = useState('iswingsistemas@gmail.com');
+  const [emailDestinatario2, setEmailDestinatario2] = useState('');
   const [asuntoEmail2, setAsuntoEmail2] = useState('');
   const [adjuntarPdf2, setAdjuntarPdf2] = useState(true);
   const [adjuntarExcel2, setAdjuntarExcel2] = useState(true);

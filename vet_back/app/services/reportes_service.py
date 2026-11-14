@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.services.reportes.base import RUTA_LOGO
 from app.services.reportes.servicio_tiempos_sla import ServicioTiemposSla, MATRIZ_SLA
 from app.services.reportes.servicio_muestras_rechazadas import ServicioMuestrasRechazadas
+from app.services.reportes.servicio_rendimiento_clinico import ServicioRendimientoClinico
 
 __all__ = ["ReportesService", "MATRIZ_SLA", "RUTA_LOGO"]
 
@@ -13,6 +14,7 @@ class ReportesService:
         self.db = db
         self._servicio_tiempos = ServicioTiemposSla(db)
         self._servicio_rechazadas = ServicioMuestrasRechazadas(db)
+        self._servicio_rendimiento = ServicioRendimientoClinico(db)
 
     def obtener_sla_objetivo(self, tipo_analisis: str, prioridad: str) -> float:
         return self._servicio_tiempos.obtener_sla_objetivo(tipo_analisis, prioridad)
@@ -86,6 +88,46 @@ class ReportesService:
         datos: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return self._servicio_rechazadas.enviar_reporte_rechazadas_email(
+            destinatario=destinatario,
+            asunto=asunto,
+            incluir_pdf=incluir_pdf,
+            incluir_excel=incluir_excel,
+            datos=datos,
+        )
+
+    def generar_reporte_rendimiento_clinico(
+        self,
+        fecha_desde: str | None = None,
+        fecha_hasta: str | None = None,
+        veterinario_filtro: str | None = None,
+        especialidad_filtro: str | None = None,
+        estado_turno_filtro: str | None = None,
+        derivacion_filtro: str | None = None,
+    ) -> dict[str, Any]:
+        return self._servicio_rendimiento.generar_reporte_rendimiento_clinico(
+            fecha_desde=fecha_desde,
+            fecha_hasta=fecha_hasta,
+            veterinario_filtro=veterinario_filtro,
+            especialidad_filtro=especialidad_filtro,
+            estado_turno_filtro=estado_turno_filtro,
+            derivacion_filtro=derivacion_filtro,
+        )
+
+    def exportar_excel_rendimiento_clinico(self, datos: dict[str, Any]) -> bytes:
+        return self._servicio_rendimiento.exportar_excel_rendimiento_clinico(datos)
+
+    def exportar_pdf_rendimiento_clinico(self, datos: dict[str, Any]) -> bytes:
+        return self._servicio_rendimiento.exportar_pdf_rendimiento_clinico(datos)
+
+    def enviar_reporte_rendimiento_email(
+        self,
+        destinatario: str,
+        asunto: str | None = None,
+        incluir_pdf: bool = True,
+        incluir_excel: bool = True,
+        datos: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return self._servicio_rendimiento.enviar_reporte_rendimiento_email(
             destinatario=destinatario,
             asunto=asunto,
             incluir_pdf=incluir_pdf,

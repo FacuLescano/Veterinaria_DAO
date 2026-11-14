@@ -35,7 +35,7 @@ export const ReporteTiemposSla: React.FC = () => {
 
   // Modal Enviar por Correo
   const [modalEmailOpen, setModalEmailOpen] = useState(false);
-  const [emailDestinatario, setEmailDestinatario] = useState('iswingsistemas@gmail.com');
+  const [emailDestinatario, setEmailDestinatario] = useState('');
   const [asuntoEmail, setAsuntoEmail] = useState('');
   const [adjuntarPdf, setAdjuntarPdf] = useState(true);
   const [adjuntarExcel, setAdjuntarExcel] = useState(true);

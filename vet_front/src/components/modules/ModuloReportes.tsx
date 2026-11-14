@@ -8,6 +8,7 @@ import {
 
 import { ReporteTiemposSla } from './reportes/ReporteTiemposSla';
 import { ReporteMuestrasRechazadas } from './reportes/ReporteMuestrasRechazadas';
+import { ReporteRendimientoClinico } from './reportes/ReporteRendimientoClinico';
 import { ReportePlaceholder } from './reportes/ReportePlaceholder';
 
 export const ModuloReportes: React.FC = () => {
@@ -81,8 +82,10 @@ export const ModuloReportes: React.FC = () => {
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
                 <span className="font-semibold text-xs leading-tight">3. Rendimiento Médico</span>
-                <span className="text-[9px] px-1.5 py-0.2 rounded-full font-bold bg-amber-100 text-amber-800">
-                  Próximo
+                <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold ${
+                  activeTab === 'reporte3' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
+                }`}>
+                  Activo
                 </span>
               </div>
               <p className={`text-[11px] mt-0.5 truncate ${activeTab === 'reporte3' ? 'text-white/80' : 'text-neutral-500'}`}>
@@ -120,15 +123,7 @@ export const ModuloReportes: React.FC = () => {
       
       {activeTab === 'reporte2' && <ReporteMuestrasRechazadas />}
 
-      {activeTab === 'reporte3' && (
-        <ReportePlaceholder
-          titulo="Reporte 3: Rendimiento Clínico y Derivaciones"
-          descripcion="Productividad de los profesionales veterinarios, tasa de derivación a estudios de laboratorio vs tratamientos ambulatorios y control de ausentismo en turnos agendados."
-          icono={Stethoscope}
-          badge="Etapa siguiente · Estructura de modelo y datos ya preparada"
-          colorScheme="blue"
-        />
-      )}
+      {activeTab === 'reporte3' && <ReporteRendimientoClinico />}
 
       {activeTab === 'reporte4' && (
         <ReportePlaceholder

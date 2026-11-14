@@ -155,22 +155,50 @@ Audita exhaustivamente la calidad sanitaria y la cadena de custodia biológica d
 
 ---
 
-## 🩺 Reporte 3: Rendimiento Clínico y Tasa de Derivación Médica (PRÓXIMAMENTE)
+## 🩺 Reporte 3: Rendimiento Clínico y Tasa de Derivación Médica (IMPLEMENTADO)
 
 ### 1. ¿Qué hace este reporte?
-Analiza la actividad médica de la clínica veterinaria. Cruza la agenda de turnos con las consultas efectivas y las órdenes de laboratorio emitidas por cada profesional.
+Analiza integralmente la actividad médica de la red veterinaria. Cruza la agenda de turnos asignados con las consultas clínicas efectivas y las órdenes de laboratorio prescriptas por cada profesional. 
+Permite a la dirección médica:
+1. Auditar el **ausentismo** de tutores y pacientes para optimizar la agenda.
+2. Evaluar el **perfil prescriptivo** de cada médico veterinario (si su conducta diagnóstica es de *Alta Derivación*, *Moderada* o *Clínico Conservador*).
+3. Determinar el **Top de Estudios Prescriptos** a la red central de laboratorio (Hemograma, Bioquímica, Perfil Renal, Citologías, etc.).
+4. Asegurar la trazabilidad diagnóstica correlacionando motivo de consulta, diagnóstico presuntivo y determinaciones solicitadas.
 
-### 2. Clases involucradas
-* `Turno`: `veterinario`, `fecha`, `estado` (`Atendido`, `Cancelado`, `Ausente`).
-* `ConsultaMedica`: `veterinario`, `requiereAnalisis`, `diagnosticoPresuntivo`.
-* `OrdenAnalisis`: `veterinarioSolicitante`, `detalles.tipoAnalisis`.
+### 2. Clases y entidades involucradas
+| Entidad / Clase | Dónde está la información | Atributos clave utilizados |
+| :--- | :--- | :--- |
+| `Turno` | Backend (`app.models.paciente`) | `scheduled_at`, `status` (`atendido`, `ausente`, `cancelado`), `veterinarian_id`, `pet_id`, `reason` |
+| `Consulta` | Backend (`app.models.paciente`) | `attended_at`, `reason`, `diagnosis`, `treatment`, `appointment_id`, `veterinarian_id` |
+| `Veterinario` | Backend (`app.models.paciente`) | `full_name`, `license_number` (matrícula), `specialty` |
+| `Mascota` / `Responsable` | Backend (`app.models.paciente`) | `pet.name`, `pet.species`, `responsible.full_name` |
+| `OrdenAnalisis` | Backend (`app.models.orden_analisis`) | `consulta_id`, `veterinario_id`, `detalles.tipo_analisis` |
+| `TipoAnalisis` | Backend (`app.models.orden_analisis`) | `nombre`, `descripcion` |
 
-### 3. Fórmulas de cálculo
-* **Tasa de Ausentismo (No-show):**
-  $$\text{Ausentismo} = \left( \frac{\text{Turnos Ausentes}}{\text{Total Turnos Agendados}} \right) \times 100$$
-* **Tasa de Derivación a Laboratorio por Médico:**
-  $$\text{Derivación} = \left( \frac{\text{Consultas con Solicitud de Laboratorio}}{\text{Total Consultas Atendidas}} \right) \times 100$$
-* **Ranking de Estudios más Prescriptos por Profesional:** Conteo agrupado de `tipoAnalisis`.
+### 3. Fórmulas y algoritmo de cálculo
+
+1. **Tasa de Ausentismo de Pacientes:**
+   $$\text{Tasa Ausentismo} = \left( \frac{\text{Turnos Ausentes}}{\text{Total Turnos Agendados}} \right) \times 100$$
+
+2. **Tasa de Asistencia Efectiva:**
+   $$\text{Tasa Asistencia} = \left( \frac{\text{Turnos Atendidos}}{\text{Total Turnos Agendados}} \right) \times 100$$
+
+3. **Tasa de Derivación Médica Global y por Profesional:**
+   $$\text{Tasa Derivación} = \left( \frac{\text{Consultas con Prescripción de Laboratorio}}{\text{Total Consultas Atendidas}} \right) \times 100$$
+
+4. **Promedio de Determinaciones por Orden:**
+   $$\text{Promedio Estudios/Orden} = \frac{\text{Total Determinaciones Solicitadas}}{\text{Total Órdenes Emitidas}}$$
+
+5. **Clasificación del Perfil Prescriptivo:**
+   - **Alta Derivación:** $\ge 60\%$ de consultas atendidas derivan en solicitud de análisis complementarios.
+   - **Derivación Moderada:** Entre $30\%$ y $60\%$.
+   - **Clínico Conservador:** $< 30\%$.
+
+### 4. Endpoints de la API
+* `GET /api/v1/reportes/rendimiento-clinico`: Devuelve el JSON analítico con KPIs, ranking por médico, top de estudios, desglose de estados y listado filtrable.
+* `GET /api/v1/reportes/rendimiento-clinico/excel`: Genera y descarga el libro Excel `.xlsx` oficial con dos hojas y logo corporativo.
+* `GET /api/v1/reportes/rendimiento-clinico/pdf`: Genera y descarga el acta médica `.pdf` apaisada con tablas de auditoría y logo institucional.
+* `POST /api/v1/reportes/rendimiento-clinico/enviar-email`: Realiza el despacho SMTP con adjuntos según los filtros seleccionados.
 
 ---
 
@@ -201,12 +229,14 @@ Para mantener el código mantenible, desacoplado y evitar archivos monolíticos,
 * [types.ts](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/types.ts): Definiciones TypeScript comunes e interfaces de datos de los reportes.
 * [ReporteTiemposSla.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/ReporteTiemposSla.tsx): Componente autónomo para el Reporte 1 (tiempos de tránsito, SLA, gráficos y exportaciones).
 * [ReporteMuestrasRechazadas.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/ReporteMuestrasRechazadas.tsx): Componente autónomo para el Reporte 2 (bioseguridad, rechazos, causas raíz y auditoría).
-* [ReportePlaceholder.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/ReportePlaceholder.tsx): Vista previa desacoplada para los reportes 3 y 4.
+* [ReporteRendimientoClinico.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/ReporteRendimientoClinico.tsx): Componente autónomo para el Reporte 3 (rendimiento médico, ausentismo, derivaciones y prescripciones).
+* [ReportePlaceholder.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/ReportePlaceholder.tsx): Vista previa desacoplada para el reporte 4.
 
 ### Backend (`vet_back/app/services/reportes/`)
-* [reportes_service.py](file:///d:/Cati/Veterinaria_DAO/vet_back/app/services/reportes_service.py): **Fachada unificada (`ReportesService`)** de ~100 líneas que expone una interfaz limpia a los endpoints y tests, delegando la lógica en los servicios especializados.
+* [reportes_service.py](file:///d:/Cati/Veterinaria_DAO/vet_back/app/services/reportes_service.py): **Fachada unificada (`ReportesService`)** de ~140 líneas que expone una interfaz limpia a los endpoints y tests, delegando la lógica en los servicios especializados.
 * [base.py](file:///d:/Cati/Veterinaria_DAO/vet_back/app/services/reportes/base.py): Constantes compartidas (ej. resolución de ruta del logo institucional `logo-patitas.png`).
 * [servicio_tiempos_sla.py](file:///d:/Cati/Veterinaria_DAO/vet_back/app/services/reportes/servicio_tiempos_sla.py): Servicio especializado para el Reporte 1 (SLA, cálculo de turnaround time, generación de Excel, PDF y correo).
 * [servicio_muestras_rechazadas.py](file:///d:/Cati/Veterinaria_DAO/vet_back/app/services/reportes/servicio_muestras_rechazadas.py): Servicio especializado para el Reporte 2 (auditoría sanitaria, cadena de frío, precintos, Excel, PDF y correo).
+* [servicio_rendimiento_clinico.py](file:///d:/Cati/Veterinaria_DAO/vet_back/app/services/reportes/servicio_rendimiento_clinico.py): Servicio especializado para el Reporte 3 (rendimiento médico, turnos vs consultas, derivaciones, Excel, PDF y correo).
 
 

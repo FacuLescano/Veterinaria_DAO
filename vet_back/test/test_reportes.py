@@ -193,3 +193,110 @@ def test_endpoint_muestras_rechazadas_pdf(client):
     assert "application/pdf" in response.headers["content-type"]
     assert response.content.startswith(b"%PDF")
 
+
+# ==============================================================================
+# TESTS REPORTE 3: Rendimiento Clínico y Tasa de Derivación Médica
+# ==============================================================================
+
+def test_generar_reporte_rendimiento_clinico(db_session):
+    service = ReportesService(db_session)
+    reporte = service.generar_reporte_rendimiento_clinico()
+
+    assert "kpis" in reporte
+    assert "rendimiento_veterinarios" in reporte
+    assert "top_estudios_prescriptos" in reporte
+    assert "distribucion_estados_turno" in reporte
+    assert "detalles_consultas" in reporte
+    assert "filtros_disponibles" in reporte
+
+    kpis = reporte["kpis"]
+    assert kpis["total_turnos_agendados"] >= 8
+    assert kpis["turnos_atendidos"] > 0
+    assert 0 <= kpis["tasa_ausentismo_porcentaje"] <= 100
+    assert 0 <= kpis["tasa_derivacion_global_porcentaje"] <= 100
+    assert kpis["total_ordenes_laboratorio"] > 0
+    assert kpis["total_estudios_solicitados"] > 0
+
+    # Verificar veterinarios
+    assert len(reporte["rendimiento_veterinarios"]) >= 3
+    for v in reporte["rendimiento_veterinarios"]:
+        assert v["turnos_asignados"] > 0
+        assert 0 <= v["tasa_asistencia_porcentaje"] <= 100
+        assert 0 <= v["tasa_derivacion_porcentaje"] <= 100
+        assert v["perfil_prescriptivo"] in {
+            "Alta Derivación (>60%)",
+            "Derivación Moderada (30-60%)",
+            "Clínico Conservador (<30%)",
+        }
+
+
+def test_filtros_rendimiento_clinico(db_session):
+    service = ReportesService(db_session)
+
+    # Filtro por médico veterinario
+    rep_vet = service.generar_reporte_rendimiento_clinico(veterinario_filtro="Sofía Martínez")
+    for d in rep_vet["detalles_consultas"]:
+        assert "Sofía Martínez" in d["veterinario_nombre"]
+
+    # Filtro por derivación
+    rep_deriv = service.generar_reporte_rendimiento_clinico(derivacion_filtro="Con Derivación")
+    for d in rep_deriv["detalles_consultas"]:
+        assert d["derivo_laboratorio"] is True
+
+    rep_sin_deriv = service.generar_reporte_rendimiento_clinico(derivacion_filtro="Sin Derivación")
+    for d in rep_sin_deriv["detalles_consultas"]:
+        assert d["derivo_laboratorio"] is False
+
+
+def test_exportar_excel_rendimiento_clinico(db_session):
+    service = ReportesService(db_session)
+    datos = service.generar_reporte_rendimiento_clinico()
+    excel_bytes = service.exportar_excel_rendimiento_clinico(datos)
+
+    assert isinstance(excel_bytes, bytes)
+    assert len(excel_bytes) > 2000
+
+
+def test_exportar_pdf_rendimiento_clinico(db_session):
+    service = ReportesService(db_session)
+    datos = service.generar_reporte_rendimiento_clinico()
+    pdf_bytes = service.exportar_pdf_rendimiento_clinico(datos)
+
+    assert isinstance(pdf_bytes, bytes)
+    assert pdf_bytes.startswith(b"%PDF")
+    assert len(pdf_bytes) > 1000
+
+
+def test_endpoint_rendimiento_clinico_json(client):
+    response = client.get("/api/v1/reportes/rendimiento-clinico")
+    assert response.status_code == 200
+    data = response.json()
+    assert "kpis" in data
+    assert "rendimiento_veterinarios" in data
+    assert "top_estudios_prescriptos" in data
+    assert "detalles_consultas" in data
+    assert len(data["filtros_disponibles"]["veterinarios"]) >= 3
+
+    # Probar filtrado por veterinario
+    res_vet = client.get("/api/v1/reportes/rendimiento-clinico?veterinario=Lucas+Ferrara")
+    assert res_vet.status_code == 200
+    data_vet = res_vet.json()
+    assert len(data_vet["detalles_consultas"]) >= 1
+    for d in data_vet["detalles_consultas"]:
+        assert "Lucas Ferrara" in d["veterinario_nombre"]
+
+
+def test_endpoint_rendimiento_clinico_excel(client):
+    response = client.get("/api/v1/reportes/rendimiento-clinico/excel")
+    assert response.status_code == 200
+    assert "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" in response.headers["content-type"]
+    assert len(response.content) > 2000
+
+
+def test_endpoint_rendimiento_clinico_pdf(client):
+    response = client.get("/api/v1/reportes/rendimiento-clinico/pdf")
+    assert response.status_code == 200
+    assert "application/pdf" in response.headers["content-type"]
+    assert response.content.startswith(b"%PDF")
+
+

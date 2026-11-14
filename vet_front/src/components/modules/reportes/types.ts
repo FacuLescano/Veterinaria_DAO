@@ -139,3 +139,85 @@ export interface ReporteRechazadasResponse {
   };
 }
 
+// ==========================================
+// Reporte 3: Rendimiento Clínico & Derivación Médica
+// ==========================================
+
+export interface KpiRendimientoClinicoData {
+  total_turnos_agendados: number;
+  turnos_atendidos: number;
+  turnos_ausentes: number;
+  turnos_cancelados: number;
+  tasa_ausentismo_porcentaje: number;
+  tasa_asistencia_porcentaje: number;
+  total_consultas_realizadas: number;
+  consultas_con_derivacion: number;
+  tasa_derivacion_global_porcentaje: number;
+  total_ordenes_laboratorio: number;
+  total_estudios_solicitados: number;
+  promedio_estudios_por_orden: number;
+}
+
+export interface RendimientoVeterinario {
+  veterinario_nombre: string;
+  matricula: string;
+  especialidad: string;
+  turnos_asignados: number;
+  turnos_atendidos: number;
+  turnos_ausentes: number;
+  turnos_cancelados: number;
+  tasa_asistencia_porcentaje: number;
+  consultas_con_derivacion: number;
+  tasa_derivacion_porcentaje: number;
+  total_ordenes_emitidas: number;
+  total_estudios_solicitados: number;
+  estudio_frecuente: string;
+  perfil_prescriptivo: string;
+}
+
+export interface EstudioPrescripto {
+  tipo_analisis: string;
+  cantidad: number;
+  porcentaje: number;
+}
+
+export interface DistribucionEstadoTurno {
+  estado: string;
+  cantidad: number;
+  porcentaje: number;
+}
+
+export interface DetalleConsultaReporte {
+  turno_id: string;
+  fecha_hora: string;
+  paciente_nombre: string;
+  especie: string;
+  tutor_nombre: string;
+  veterinario_nombre: string;
+  matricula: string;
+  especialidad: string;
+  estado_turno: string;
+  motivo_consulta: string;
+  diagnostico: string;
+  derivo_laboratorio: boolean;
+  orden_numero: string;
+  estudios_lista: string[];
+  estudios_solicitados: string;
+}
+
+export interface ReporteRendimientoClinicoResponse {
+  fecha_generacion: string;
+  kpis: KpiRendimientoClinicoData;
+  rendimiento_veterinarios: RendimientoVeterinario[];
+  top_estudios_prescriptos: EstudioPrescripto[];
+  distribucion_estados_turno: DistribucionEstadoTurno[];
+  detalles_consultas: DetalleConsultaReporte[];
+  filtros_disponibles: {
+    veterinarios: string[];
+    especialidades: string[];
+    estados_turno: string[];
+    derivaciones: string[];
+  };
+}
+
+
