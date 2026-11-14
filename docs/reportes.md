@@ -77,25 +77,81 @@ Monitorea de punta a punta la eficiencia logística y analítica de la red. Mide
 
 ---
 
-## 🛡️ Reporte 2: Muestras Biológicas Rechazadas por Fallas en el Transporte (PRÓXIMAMENTE)
+## 🛡️ Reporte 2: Muestras Biológicas Rechazadas por Fallas en el Transporte y Bioseguridad (IMPLEMENTADO)
 
 ### 1. ¿Qué hace este reporte?
-Audita la calidad sanitaria y la cadena de custodia biológica. Identifica cuántas muestras debieron ser descartadas/rechazadas al llegar al laboratorio y analiza la causa raíz:
-* Rotura o violación del precinto sanitario (`PREC-XXXXX`).
-* Excursiones térmicas (quiebre de cadena de frío fuera de $2^\circ\text{C}$ a $8^\circ\text{C}$).
-* Muestra insuficiente o tubo deteriorado.
+Audita exhaustivamente la calidad sanitaria y la cadena de custodia biológica de las muestras remitidas al Laboratorio Central. Monitorea cuántas muestras debieron ser descartadas/rechazadas al momento de la recepción física y realiza un **análisis de causa raíz** cruzando:
+* **Integridad de precintos numerados:** Identificación de precintos rotos, violentados o con códigos discordantes frente al remito original (`PREC-XXXXX`).
+* **Cadena de frío y control termométrico:** Detección de **excursiones térmicas** fuera del rango bioseguro ($2.0^\circ\text{C}$ a $8.0^\circ\text{C}$) registradas por los sensores de las conservadoras térmicas.
+* **Incidentes de bioseguridad:** Tubos fisurados, hemólisis severa, volumen insuficiente o inconsistencias documentales sin resolución.
+* **Índice de confiabilidad de la flota de transportistas:** Evaluación del desempeño y siniestralidad de cada chofer o empresa de logística.
 
-### 2. Clases involucradas
-* `MuestraBiologica`: `estadoActual` (`Rechazada`), `tipoMaterial`, `condicionConservacion`.
-* `PrecintoSanitario`: `estadoVerificacion` (`Roto`, `Ausente`, `CodigoNoCoincide`).
-* `RemitoBiologico`: `temperaturaDespachoC`, `transportista`, `conservadoraId`.
-* `Incidencia`: `tipo`, `descripcion`, `remitoId`.
+---
 
-### 3. Fórmulas de cálculo
-* **Tasa de Rechazo Global:**
-  $$\text{Tasa Rechazo} = \left( \frac{\text{Muestras Rechazadas}}{\text{Total de Muestras Despachadas}} \right) \times 100$$
-* **Índice de Confiabilidad por Transportista:**
-  $$\text{Confiabilidad} = 100 - \left( \frac{\text{Muestras Rechazadas bajo su custodia}}{\text{Total Muestras que transportó}} \times 100 \right)$$
+### 2. Clases y entidades involucradas
+| Entidad / Clase | Módulo / Ubicación | Atributos clave utilizados |
+| :--- | :--- | :--- |
+| `Muestra` | Backend (`app.models.orden_analisis`) | `codigo_etiqueta`, `estado` (`rechazada`, `aceptada`), `orden` |
+| `Envio` | Backend (`app.models.envio`) | `transportista`, `fecha_despacho`, `remito_id`, `registros_temperatura` |
+| `Remito` | Backend (`app.models.envio`) | `numero`, `fecha_emision` |
+| `RegistroTemperatura` | Backend (`app.models.envio`) | `temperatura_medida_c`, `fecha_registro` (termometría salida/llegada) |
+| `VerificacionPrecinto` | Backend (`app.models.recepcion`) | `codigo_esperado`, `codigo_observado`, `estado` (`Integro`, `Roto`, `Ausente`) |
+| `Incidencia` | Backend (`app.models.recepcion`) | `tipo`, `descripcion`, `resolucion`, `muestra_id` |
+| `OrdenAnalisis` / `Pet` / `Responsible` | Backend (`app.models.orden_analisis`, `app.models.consulta`) | `paciente.name`, `species`, `responsible.full_name`, `tipo_analisis.nombre` |
+
+---
+
+### 3. Fórmulas y algoritmos de cálculo
+
+1. **Tasa de Rechazo Global ($TR$):**
+   $$TR = \left( \frac{\text{Cantidad de Muestras Rechazadas}}{\text{Total de Muestras Auditadas}} \right) \times 100$$
+   *(Meta de bioseguridad: $TR \le 5.0\%$)*.
+
+2. **Tasa de Conformidad de Muestras ($TC$):**
+   $$TC = 100\% - TR = \left( \frac{\text{Cantidad de Muestras Aceptadas}}{\text{Total de Muestras Auditadas}} \right) \times 100$$
+
+3. **Índice de Integridad de Precintos ($IP$):**
+   $$IP = \left( \frac{\text{Precintos Íntegros y Coincidentes}}{\text{Total de Muestras Auditadas}} \right) \times 100$$
+
+4. **Conformidad de Cadena de Frío ($CCF$):**
+   $$CCF = \left( \frac{\text{Muestras con } 2.0^\circ\text{C} \le T_{\text{llegada}} \le 8.0^\circ\text{C}}{\text{Total de Muestras Auditadas}} \right) \times 100$$
+
+5. **Distribución y Frecuencia de Causas Raíz ($FC_i$):**
+   Para cada causa $i$ (Rotura de Precinto, Excursión Térmica, Hemólisis, etc.):
+   $$FC_i = \left( \frac{\text{Conteo de Rechazos por Causa } i}{\text{Total de Muestras Rechazadas}} \right) \times 100$$
+   * **Severidad Crítica:** Rotura o violación de precinto, código discordante o excursión térmica $> 8.0^\circ\text{C}$.
+   * **Severidad Moderada:** Muestra insuficiente, rotulación ilegible o hemólisis leve.
+
+6. **Confiabilidad y Calificación por Transportista ($CT$):**
+   Para cada chofer o empresa de transporte $k$:
+   $$CT_k = \left( \frac{\text{Muestras Conformes bajo custodia de } k}{\text{Total de Muestras Transportadas por } k} \right) \times 100$$
+   * **Excelente:** $CT_k \ge 95.0\%$
+   * **Aceptable:** $80.0\% \le CT_k < 95.0\%$
+   * **Crítico:** $CT_k < 80.0\%$
+
+---
+
+### 4. Funcionalidades implementadas
+* **Identidad y branding oficial:** Integración del logotipo oficial de Patitas & Co. en los 3 formatos (Excel con celda `A1`, PDF apaisado y Correo HTML con `cid:logo_patitas`).
+* **Tablero de Control de Bioseguridad en Frontend:**
+  * 6 tarjetas KPI interactivas con codificación visual de colores según umbrales de seguridad.
+  * Gráfico 1: Barras horizontales de distribución porcentual por Causa Raíz con etiquetas de severidad (*Crítica* vs *Moderada*).
+  * Gráfico 2: Panel de confiabilidad por transportista con barras de progreso de conformidad y motivo de falla más frecuente.
+  * Tabla de trazabilidad y auditoría de precintos (con comparador de códigos esperado vs observado, rangos termométricos y acciones correctivas).
+* **Filtros multidimensionales:** Por `Causa de Rechazo`, por `Transportista`, por `Estado de Muestra` (`Todas` / `Rechazada` / `Aceptada`), y por rango de fechas (`Desde` / `Hasta`).
+* **Descarga en Excel (.xlsx):** Libro multihistorial con formato profesional en verdes `#2D5864` / `#5F8E9C`, hoja de métricas agregadas y hoja de registro detallado de muestras con resaltado condicional.
+* **Descarga en PDF oficial:** Documento apaisado (*landscape*) con encabezado corporativo, matriz de KPIs de bioseguridad, causas de rechazo y log de incidentes para auditorías regulatorias de SENASA.
+* **Envío automático por Correo Electrónico:** Integración directa con servidor SMTP (Gmail) enviando un correo con diseño HTML corporativo, KPIs destacados, logo incrustado y adjuntos en PDF y Excel.
+
+---
+
+### 5. Endpoints de la API
+* `GET /api/v1/reportes/muestras-rechazadas`: Devuelve la estructura JSON completa con KPIs, distribución causal, confiabilidad de transporte y muestras auditadas.
+* `GET /api/v1/reportes/muestras-rechazadas/excel`: Genera y descarga el libro de auditoría `.xlsx`.
+* `GET /api/v1/reportes/muestras-rechazadas/pdf`: Genera y descarga el acta de inspección `.pdf`.
+* `POST /api/v1/reportes/muestras-rechazadas/enviar-email`: Realiza el despacho SMTP con adjuntos según los filtros seleccionados.
+
+---
 
 ---
 
@@ -133,4 +189,24 @@ Evalúa la correlación entre la presunción diagnóstica del médico y los resu
 * **Tasa de Positividad Diagnóstica:**
   $$\text{Positividad} = \left( \frac{\text{Análisis con Alertas Patológicas (Alto/Bajo)}}{\text{Total Análisis Procesados}} \right) \times 100$$
 * **Frecuencia de Patología por Especie:** Agrupamiento de parámetros alterados según especie (ej: Uremia/Creatinina elevada en felinos geriátricos).
+
+---
+
+## 🏛️ Arquitectura Modular del Subsistema de Reportes
+
+Para mantener el código mantenible, desacoplado y evitar archivos monolíticos, el sistema aplica los principios **SOLID** y el patrón estructural **Facade**:
+
+### Frontend (`vet_front/src/components/modules/reportes/`)
+* [ModuloReportes.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/ModuloReportes.tsx): Contenedor orquestador liviano (~130 líneas) responsable de la barra de navegación de pestañas.
+* [types.ts](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/types.ts): Definiciones TypeScript comunes e interfaces de datos de los reportes.
+* [ReporteTiemposSla.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/ReporteTiemposSla.tsx): Componente autónomo para el Reporte 1 (tiempos de tránsito, SLA, gráficos y exportaciones).
+* [ReporteMuestrasRechazadas.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/ReporteMuestrasRechazadas.tsx): Componente autónomo para el Reporte 2 (bioseguridad, rechazos, causas raíz y auditoría).
+* [ReportePlaceholder.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/ReportePlaceholder.tsx): Vista previa desacoplada para los reportes 3 y 4.
+
+### Backend (`vet_back/app/services/reportes/`)
+* [reportes_service.py](file:///d:/Cati/Veterinaria_DAO/vet_back/app/services/reportes_service.py): **Fachada unificada (`ReportesService`)** de ~100 líneas que expone una interfaz limpia a los endpoints y tests, delegando la lógica en los servicios especializados.
+* [base.py](file:///d:/Cati/Veterinaria_DAO/vet_back/app/services/reportes/base.py): Constantes compartidas (ej. resolución de ruta del logo institucional `logo-patitas.png`).
+* [servicio_tiempos_sla.py](file:///d:/Cati/Veterinaria_DAO/vet_back/app/services/reportes/servicio_tiempos_sla.py): Servicio especializado para el Reporte 1 (SLA, cálculo de turnaround time, generación de Excel, PDF y correo).
+* [servicio_muestras_rechazadas.py](file:///d:/Cati/Veterinaria_DAO/vet_back/app/services/reportes/servicio_muestras_rechazadas.py): Servicio especializado para el Reporte 2 (auditoría sanitaria, cadena de frío, precintos, Excel, PDF y correo).
+
 

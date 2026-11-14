@@ -119,3 +119,126 @@ def enviar_reporte_tiempos_sla_email(
         )
     return resultado
 
+
+class EnvioReporteRechazadasEmailEntrada(BaseModel):
+    destinatario: str
+    asunto: str | None = None
+    incluir_pdf: bool = True
+    incluir_excel: bool = True
+    fecha_desde: str | None = None
+    fecha_hasta: str | None = None
+    causa: str | None = None
+    causa_rechazo: str | None = None
+    transportista: str | None = None
+    estado_muestra: str | None = None
+    estado: str | None = None
+
+
+@router.get("/muestras-rechazadas", summary="Reporte 2: Muestras Rechazadas por Fallas en Transporte y Bioseguridad")
+def obtener_reporte_muestras_rechazadas(
+    fecha_desde: str | None = Query(None, description="Fecha inicio YYYY-MM-DD"),
+    fecha_hasta: str | None = Query(None, description="Fecha fin YYYY-MM-DD"),
+    causa: str | None = Query(None, description="Filtro por Causa Raíz de Rechazo"),
+    causa_rechazo: str | None = Query(None, description="Alias para causa"),
+    transportista: str | None = Query(None, description="Filtro por Transportista"),
+    estado_muestra: str | None = Query(None, description="Filtro por Estado (Rechazada / Aceptada)"),
+    estado: str | None = Query(None, description="Alias para estado_muestra"),
+    service: ReportesService = Depends(get_service),
+) -> dict[str, Any]:
+    filtro_causa = causa or causa_rechazo
+    filtro_estado = estado_muestra or estado
+    return service.generar_reporte_muestras_rechazadas(
+        fecha_desde=fecha_desde,
+        fecha_hasta=fecha_hasta,
+        causa_filtro=filtro_causa,
+        transportista_filtro=transportista,
+        estado_filtro=filtro_estado,
+    )
+
+
+@router.get("/muestras-rechazadas/excel", summary="Descargar Reporte 2 en formato Excel (.xlsx)")
+def descargar_reporte_muestras_rechazadas_excel(
+    fecha_desde: str | None = Query(None),
+    fecha_hasta: str | None = Query(None),
+    causa: str | None = Query(None),
+    causa_rechazo: str | None = Query(None),
+    transportista: str | None = Query(None),
+    estado_muestra: str | None = Query(None),
+    estado: str | None = Query(None),
+    service: ReportesService = Depends(get_service),
+):
+    filtro_causa = causa or causa_rechazo
+    filtro_estado = estado_muestra or estado
+    datos = service.generar_reporte_muestras_rechazadas(
+        fecha_desde=fecha_desde,
+        fecha_hasta=fecha_hasta,
+        causa_filtro=filtro_causa,
+        transportista_filtro=transportista,
+        estado_filtro=filtro_estado,
+    )
+    excel_bytes = service.exportar_excel_muestras_rechazadas(datos)
+    nombre_archivo = "reporte_muestras_rechazadas_bioseguridad.xlsx"
+    return Response(
+        content=excel_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{nombre_archivo}"'},
+    )
+
+
+@router.get("/muestras-rechazadas/pdf", summary="Descargar Reporte 2 en formato PDF oficial")
+def descargar_reporte_muestras_rechazadas_pdf(
+    fecha_desde: str | None = Query(None),
+    fecha_hasta: str | None = Query(None),
+    causa: str | None = Query(None),
+    causa_rechazo: str | None = Query(None),
+    transportista: str | None = Query(None),
+    estado_muestra: str | None = Query(None),
+    estado: str | None = Query(None),
+    service: ReportesService = Depends(get_service),
+):
+    filtro_causa = causa or causa_rechazo
+    filtro_estado = estado_muestra or estado
+    datos = service.generar_reporte_muestras_rechazadas(
+        fecha_desde=fecha_desde,
+        fecha_hasta=fecha_hasta,
+        causa_filtro=filtro_causa,
+        transportista_filtro=transportista,
+        estado_filtro=filtro_estado,
+    )
+    pdf_bytes = service.exportar_pdf_muestras_rechazadas(datos)
+    nombre_archivo = "reporte_muestras_rechazadas_bioseguridad.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{nombre_archivo}"'},
+    )
+
+
+@router.post("/muestras-rechazadas/enviar-email", summary="Enviar Reporte 2 por correo electrónico con adjuntos")
+def enviar_reporte_muestras_rechazadas_email(
+    payload: EnvioReporteRechazadasEmailEntrada,
+    service: ReportesService = Depends(get_service),
+) -> dict[str, Any]:
+    filtro_causa = payload.causa or payload.causa_rechazo
+    filtro_estado = payload.estado_muestra or payload.estado
+    datos = service.generar_reporte_muestras_rechazadas(
+        fecha_desde=payload.fecha_desde,
+        fecha_hasta=payload.fecha_hasta,
+        causa_filtro=filtro_causa,
+        transportista_filtro=payload.transportista,
+        estado_filtro=filtro_estado,
+    )
+    resultado = service.enviar_reporte_rechazadas_email(
+        destinatario=payload.destinatario,
+        asunto=payload.asunto,
+        incluir_pdf=payload.incluir_pdf,
+        incluir_excel=payload.incluir_excel,
+        datos=datos,
+    )
+    if not resultado["exito"]:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=resultado["mensaje"],
+        )
+    return resultado
+
