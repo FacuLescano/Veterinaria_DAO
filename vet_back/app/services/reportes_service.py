@@ -5,6 +5,7 @@ from app.services.reportes.base import RUTA_LOGO
 from app.services.reportes.servicio_tiempos_sla import ServicioTiemposSla, MATRIZ_SLA
 from app.services.reportes.servicio_muestras_rechazadas import ServicioMuestrasRechazadas
 from app.services.reportes.servicio_rendimiento_clinico import ServicioRendimientoClinico
+from app.services.reportes.servicio_eficacia_diagnostica import ServicioEficaciaDiagnostica
 
 __all__ = ["ReportesService", "MATRIZ_SLA", "RUTA_LOGO"]
 
@@ -15,6 +16,7 @@ class ReportesService:
         self._servicio_tiempos = ServicioTiemposSla(db)
         self._servicio_rechazadas = ServicioMuestrasRechazadas(db)
         self._servicio_rendimiento = ServicioRendimientoClinico(db)
+        self._servicio_eficacia = ServicioEficaciaDiagnostica(db)
 
     def obtener_sla_objetivo(self, tipo_analisis: str, prioridad: str) -> float:
         return self._servicio_tiempos.obtener_sla_objetivo(tipo_analisis, prioridad)
@@ -128,6 +130,50 @@ class ReportesService:
         datos: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return self._servicio_rendimiento.enviar_reporte_rendimiento_email(
+            destinatario=destinatario,
+            asunto=asunto,
+            incluir_pdf=incluir_pdf,
+            incluir_excel=incluir_excel,
+            datos=datos,
+        )
+
+    # ==========================================
+    # Métodos para Reporte 4: Eficacia Diagnóstica & Hallazgos Críticos
+    # ==========================================
+
+    def generar_reporte_eficacia_diagnostica(
+        self,
+        fecha_desde: str | None = None,
+        fecha_hasta: str | None = None,
+        especie_filtro: str | None = None,
+        grupo_etario_filtro: str | None = None,
+        estado_diagnostico_filtro: str | None = None,
+        tipo_analisis_filtro: str | None = None,
+    ) -> dict[str, Any]:
+        return self._servicio_eficacia.generar_reporte_eficacia_diagnostica(
+            fecha_desde=fecha_desde,
+            fecha_hasta=fecha_hasta,
+            especie_filtro=especie_filtro,
+            grupo_etario_filtro=grupo_etario_filtro,
+            estado_diagnostico_filtro=estado_diagnostico_filtro,
+            tipo_analisis_filtro=tipo_analisis_filtro,
+        )
+
+    def exportar_excel_eficacia_diagnostica(self, datos: dict[str, Any]) -> bytes:
+        return self._servicio_eficacia.exportar_excel_eficacia_diagnostica(datos)
+
+    def exportar_pdf_eficacia_diagnostica(self, datos: dict[str, Any]) -> bytes:
+        return self._servicio_eficacia.exportar_pdf_eficacia_diagnostica(datos)
+
+    def enviar_reporte_eficacia_email(
+        self,
+        destinatario: str,
+        asunto: str | None = None,
+        incluir_pdf: bool = True,
+        incluir_excel: bool = True,
+        datos: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return self._servicio_eficacia.enviar_reporte_eficacia_email(
             destinatario=destinatario,
             asunto=asunto,
             incluir_pdf=incluir_pdf,

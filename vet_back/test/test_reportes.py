@@ -300,3 +300,99 @@ def test_endpoint_rendimiento_clinico_pdf(client):
     assert response.content.startswith(b"%PDF")
 
 
+# ==========================================
+# Tests para Reporte 4: Eficacia Diagnóstica & Hallazgos Críticos
+# ==========================================
+
+
+def test_generar_reporte_eficacia_diagnostica(db_session):
+    service = ReportesService(db_session)
+    reporte = service.generar_reporte_eficacia_diagnostica()
+
+    assert "kpis" in reporte
+    assert "desglose_por_especie" in reporte
+    assert "desglose_por_grupo_etario" in reporte
+    assert "top_analitos_criticos" in reporte
+    assert "distribucion_severidad" in reporte
+    assert "detalles_diagnosticos" in reporte
+
+    kpis = reporte["kpis"]
+    assert kpis["total_estudios_procesados"] >= 8
+    assert kpis["total_con_hallazgos_criticos"] > 0
+    assert kpis["total_fisiologicos_normales"] > 0
+    assert 0 <= kpis["tasa_positividad_porcentaje"] <= 100
+    assert 0 <= kpis["tasa_concordancia_diagnostica"] <= 100
+    assert kpis["total_especies_auditadas"] >= 2
+
+
+def test_filtros_reporte_eficacia_diagnostica(db_session):
+    service = ReportesService(db_session)
+
+    # Filtrar por especie Canino
+    rep_can = service.generar_reporte_eficacia_diagnostica(especie_filtro="Canino")
+    assert len(rep_can["detalles_diagnosticos"]) >= 1
+    for d in rep_can["detalles_diagnosticos"]:
+        assert d["especie"] == "Canino"
+
+    # Filtrar por especie Felino
+    rep_fel = service.generar_reporte_eficacia_diagnostica(especie_filtro="Felino")
+    assert len(rep_fel["detalles_diagnosticos"]) >= 1
+    for d in rep_fel["detalles_diagnosticos"]:
+        assert d["especie"] == "Felino"
+
+    # Filtrar por Estado Diagnóstico
+    rep_pat = service.generar_reporte_eficacia_diagnostica(estado_diagnostico_filtro="Hallazgo Patológico")
+    for d in rep_pat["detalles_diagnosticos"]:
+        assert d["estado_diagnostico"] == "Hallazgo Patológico"
+
+
+def test_exportar_excel_eficacia_diagnostica(db_session):
+    service = ReportesService(db_session)
+    datos = service.generar_reporte_eficacia_diagnostica()
+    excel_bytes = service.exportar_excel_eficacia_diagnostica(datos)
+
+    assert isinstance(excel_bytes, bytes)
+    assert len(excel_bytes) > 2000
+
+
+def test_exportar_pdf_eficacia_diagnostica(db_session):
+    service = ReportesService(db_session)
+    datos = service.generar_reporte_eficacia_diagnostica()
+    pdf_bytes = service.exportar_pdf_eficacia_diagnostica(datos)
+
+    assert isinstance(pdf_bytes, bytes)
+    assert pdf_bytes.startswith(b"%PDF")
+    assert len(pdf_bytes) > 1000
+
+
+def test_endpoint_eficacia_diagnostica_json(client):
+    response = client.get("/api/v1/reportes/eficacia-diagnostica")
+    assert response.status_code == 200
+    data = response.json()
+    assert "kpis" in data
+    assert "desglose_por_especie" in data
+    assert "top_analitos_criticos" in data
+    assert "detalles_diagnosticos" in data
+    assert len(data["filtros_disponibles"]["especies"]) >= 2
+
+    # Probar filtrado por query param especie
+    res_esp = client.get("/api/v1/reportes/eficacia-diagnostica?especie=Felino")
+    assert res_esp.status_code == 200
+    data_esp = res_esp.json()
+    for d in data_esp["detalles_diagnosticos"]:
+        assert d["especie"] == "Felino"
+
+
+def test_endpoint_eficacia_diagnostica_excel_y_pdf(client):
+    res_excel = client.get("/api/v1/reportes/eficacia-diagnostica/excel")
+    assert res_excel.status_code == 200
+    assert "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" in res_excel.headers["content-type"]
+    assert len(res_excel.content) > 2000
+
+    res_pdf = client.get("/api/v1/reportes/eficacia-diagnostica/pdf")
+    assert res_pdf.status_code == 200
+    assert "application/pdf" in res_pdf.headers["content-type"]
+    assert res_pdf.content.startswith(b"%PDF")
+
+
+

@@ -220,4 +220,96 @@ export interface ReporteRendimientoClinicoResponse {
   };
 }
 
+// ==========================================
+// Reporte 4: Eficacia Diagnóstica & Hallazgos Críticos
+// ==========================================
+
+export interface KpiEficaciaData {
+  total_estudios_procesados: number;
+  total_con_hallazgos_criticos: number;
+  total_fisiologicos_normales: number;
+  tasa_positividad_porcentaje: number;
+  tasa_concordancia_diagnostica: number;
+  total_especies_auditadas: number;
+}
+
+export interface DesgloseEspecie {
+  especie: string;
+  total_estudios: number;
+  patologicos: number;
+  normales: number;
+  tasa_positividad_porcentaje: number;
+  patologia_predominante: string;
+}
+
+export interface DesgloseGrupoEtario {
+  grupo_etario: string;
+  total_estudios: number;
+  patologicos: number;
+  normales: number;
+  tasa_positividad_porcentaje: number;
+}
+
+export interface AnalitoCritico {
+  parametro: string;
+  tipo_analisis: string;
+  frecuencia_alerta: number;
+  porcentaje_incidencia: number;
+  tipo_alerta_predominante: 'Alto' | 'Bajo';
+}
+
+export interface DistribucionSeveridad {
+  severidad: 'Crítico' | 'Moderado' | 'Normal';
+  cantidad: number;
+  porcentaje: number;
+}
+
+export interface ParametroAlerta {
+  parametro: string;
+  valor: string;
+  unidad: string;
+  rangoReferencia: string;
+  alerta: 'Alto' | 'Bajo' | 'Normal' | 'Crítico';
+}
+
+export interface DetalleDiagnostico {
+  resultado_id: string;
+  orden_codigo: string;
+  fecha_emision: string;
+  paciente_nombre: string;
+  especie: string;
+  raza: string;
+  edad_anios: number;
+  grupo_etario: string;
+  tutor_nombre: string;
+  veterinario_nombre: string;
+  motivo_consulta: string;
+  diagnostico_presuntivo: string;
+  tipo_analisis: string;
+  parametros_resumen: string;
+  parametros_alterados: string[];
+  lista_parametros_alerta: ParametroAlerta[];
+  estado_diagnostico: 'Hallazgo Patológico' | 'Fisiológico Normal';
+  severidad: 'Crítico' | 'Moderado' | 'Normal';
+  concordancia: string;
+  conclusion_laboratorio: string;
+}
+
+export interface ReporteEficaciaResponse {
+  fecha_generacion: string;
+  kpis: KpiEficaciaData;
+  desglose_por_especie: DesgloseEspecie[];
+  desglose_por_grupo_etario: DesgloseGrupoEtario[];
+  top_analitos_criticos: AnalitoCritico[];
+  distribucion_severidad: DistribucionSeveridad[];
+  detalles_diagnosticos: DetalleDiagnostico[];
+  filtros_disponibles: {
+    especies: string[];
+    grupos_etarios: string[];
+    estados_diagnosticos: string[];
+    tipos_analisis: string[];
+  };
+}
+
+
 

@@ -9,7 +9,7 @@ import {
 import { ReporteTiemposSla } from './reportes/ReporteTiemposSla';
 import { ReporteMuestrasRechazadas } from './reportes/ReporteMuestrasRechazadas';
 import { ReporteRendimientoClinico } from './reportes/ReporteRendimientoClinico';
-import { ReportePlaceholder } from './reportes/ReportePlaceholder';
+import { ReporteEficaciaDiagnostica } from './reportes/ReporteEficaciaDiagnostica';
 
 export const ModuloReportes: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'reporte1' | 'reporte2' | 'reporte3' | 'reporte4'>('reporte1');
@@ -99,15 +99,7 @@ export const ModuloReportes: React.FC = () => {
 
       {activeTab === 'reporte3' && <ReporteRendimientoClinico />}
 
-      {activeTab === 'reporte4' && (
-        <ReportePlaceholder
-          titulo="Reporte 4: Eficacia Diagnóstica & Hallazgos Críticos"
-          descripcion="Porcentaje de análisis que arrojaron valores patológicos o fuera de rango de referencia, cruzados con la especie del animal y grupo etario para epidemiología veterinaria."
-          icono={Microscope}
-          badge="Etapa siguiente · Estructura de modelo y datos ya preparada"
-          colorScheme="emerald"
-        />
-      )}
+      {activeTab === 'reporte4' && <ReporteEficaciaDiagnostica />}
     </div>
   );
 };

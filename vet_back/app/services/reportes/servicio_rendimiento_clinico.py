@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.models.orden_analisis import OrdenAnalisis
 from app.models.paciente import Consulta, Mascota, Responsable, Turno, Veterinario
 from app.services.correo_service import ServicioCorreo
-from app.services.reportes.base import RUTA_LOGO
+from app.services.reportes.base import RUTA_LOGO, fecha_hora_argentina_str
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +163,7 @@ class ServicioRendimientoClinico:
         ]
 
         return {
-            "fecha_generacion": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "fecha_generacion": fecha_hora_argentina_str(),
             "kpis": {
                 "total_turnos_agendados": total_turnos,
                 "turnos_atendidos": turnos_atendidos,

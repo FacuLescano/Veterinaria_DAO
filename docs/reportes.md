@@ -202,21 +202,46 @@ Permite a la dirección médica:
 
 ---
 
-## 🔬 Reporte 4: Eficacia Diagnóstica y Hallazgos Críticos (PRÓXIMAMENTE)
+## 🔬 Reporte 4: Eficacia Diagnóstica y Hallazgos Críticos (IMPLEMENTADO)
 
 ### 1. ¿Qué hace este reporte?
-Evalúa la correlación entre la presunción diagnóstica del médico y los resultados analíticos cuantitativos. Mide qué porcentaje de los estudios confirman patologías mediante valores anormales (`alerta: 'Alto'` o `'Bajo'`) discriminados por especie y edad de la mascota.
+Evalúa la correlación entre la presunción diagnóstica del médico veterinario y los resultados analíticos cuantitativos emitidos por el laboratorio. 
+Permite:
+1. **Medir la tasa de positividad diagnóstica:** Qué porcentaje de estudios confirman patologías mediante analitos cuantitativos fuera del rango de referencia (`alerta: 'Alto'` o `'Bajo'`).
+2. **Evaluar la certeza y concordancia diagnóstica:** Confirmación del diagnóstico presuntivo emitido en consulta versus los hallazgos patológicos objetivos.
+3. **Mapeo epidemiológico por especie:** Identificación de perfiles patológicos predominantes según cualquier especie animal admitida por el centro (Caninos, Felinos, Equinos, Conejos / Pequeños mamíferos, Aves, etc.).
+4. **Distribución por grupo etario:** Segmentación de patologías en Cachorros/Jóvenes (< 1 año), Adultos (1 a 7 años) y Geriátricos (> 7 años).
+5. **Top de analitos críticos:** Ranking de frecuencia y tendencia de parámetros alterados (Glóbulos blancos, Creatinina sérica, ALT/GPT, Glucemia, Lactato sérico, Cristales en orina, etc.).
 
-### 2. Clases involucradas
-* `ResultadoAnalisis`: `valores` (`parametro`, `valor`, `rangoReferencia`, `alerta`), `conclusionDiagnostica`.
-* `OrdenAnalisis`: `mascotaId`, `consultaId`.
-* `Mascota`: `especie` (`Canino` vs `Felino`), `fechaNacimientoAprox` (edad).
-* `ConsultaMedica`: `diagnosticoPresuntivo`.
+### 2. Clases y entidades involucradas
+| Entidad / Clase | Dónde está la información | Atributos clave utilizados |
+| :--- | :--- | :--- |
+| `ResultadoAnalisis` | Backend (`app.models.recepcion`) | `datos['valores']` (`parametro`, `valor`, `alerta`, `rangoReferencia`), `conclusionDiagnostica`, `fecha_recepcion` |
+| `OrdenAnalisis` / `DetalleOrden` | Backend (`app.models.orden_analisis`) | `consulta_id`, `veterinario`, `detalles.tipo_analisis.nombre` |
+| `Mascota` | Backend (`app.models.paciente`) | `name`, `species` (`Canino`, `Felino`, `Equino`, `Conejo`, `Ave`, etc.), `breed`, `birth_date` (cálculo de grupo etario) |
+| `Responsable` | Backend (`app.models.paciente`) | `full_name` (tutor a cargo) |
+| `Consulta` | Backend (`app.models.paciente`) | `diagnosis` (diagnóstico presuntivo), `reason` (motivo de consulta), `attended_at` |
 
-### 3. Fórmulas de cálculo
-* **Tasa de Positividad Diagnóstica:**
-  $$\text{Positividad} = \left( \frac{\text{Análisis con Alertas Patológicas (Alto/Bajo)}}{\text{Total Análisis Procesados}} \right) \times 100$$
-* **Frecuencia de Patología por Especie:** Agrupamiento de parámetros alterados según especie (ej: Uremia/Creatinina elevada en felinos geriátricos).
+### 3. Fórmulas de cálculo y algoritmos
+1. **Tasa de Positividad Diagnóstica Global:**
+   $$\text{Positividad} = \left( \frac{\text{Estudios con Analitos Fuera de Rango (Alto / Bajo)}}{\text{Total Estudios Procesados}} \right) \times 100$$
+
+2. **Índice de Concordancia Diagnóstica:**
+   $$\text{Concordancia} = \left( \frac{\text{Estudios donde el Laboratorio Confirma la Presunción Clínica}}{\text{Total Estudios Procesados}} \right) \times 100$$
+
+3. **Positividad Específica por Especie:**
+   $$\text{Positividad Especie } k = \left( \frac{\text{Estudios Patológicos en Especie } k}{\text{Total Estudios en Especie } k} \right) \times 100$$
+
+4. **Clasificación por Severidad:**
+   - **Crítico:** Desviación severa en glóbulos blancos, creatinina $> 2.5\,\text{mg/dL}$, glucemia descompensada o T4 libre $> 50\,\text{pmol/L}$.
+   - **Moderado:** Desviaciones moderadas (hematuria, bacteriuria, aumento leve de enzimas o parásitos).
+   - **Fisiológico Normal:** Todos los analitos dentro del intervalo de referencia biológico.
+
+### 4. Endpoints de la API
+* `GET /api/v1/reportes/eficacia-diagnostica`: Retorna el JSON analítico con KPIs, desglose por especie, grupo etario, analitos críticos y casos clínicos.
+* `GET /api/v1/reportes/eficacia-diagnostica/excel`: Descarga el libro `.xlsx` con dos hojas, formato condicional y logo oficial.
+* `GET /api/v1/reportes/eficacia-diagnostica/pdf`: Descarga el informe epidemiológico en `.pdf` landscape con tablas de auditoría.
+* `POST /api/v1/reportes/eficacia-diagnostica/enviar-email`: Realiza el despacho SMTP con adjuntos según los filtros seleccionados.
 
 ---
 
@@ -225,23 +250,24 @@ Evalúa la correlación entre la presunción diagnóstica del médico y los resu
 Para mantener el código mantenible, desacoplado y evitar archivos monolíticos, el sistema aplica los principios **SOLID** y el patrón estructural **Facade**:
 
 ### Frontend (`vet_front/src/components/modules/reportes/`)
-* [ModuloReportes.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/ModuloReportes.tsx): Contenedor orquestador liviano (~130 líneas) responsable de la barra de navegación de pestañas.
-* [types.ts](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/types.ts): Definiciones TypeScript comunes e interfaces de datos de los reportes.
+* [ModuloReportes.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/ModuloReportes.tsx): Contenedor orquestador liviano (~110 líneas) responsable de la barra de navegación de pestañas.
+* [types.ts](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/types.ts): Definiciones TypeScript comunes e interfaces de datos de los 4 reportes.
 * `common/`: Componentes transversales reutilizables para garantizar consistencia visual y no duplicar código:
-  * [ReporteHeaderBanner.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/common/ReporteHeaderBanner.tsx): Encabezado oficial con logo institucional, títulos y acreditación.
-  * [KpiCard.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/common/KpiCard.tsx): Tarjeta métrica estandarizada con iconos, valores, subtextos y alertas.
+  * [ReporteHeaderBanner.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/common/ReporteHeaderBanner.tsx): Encabezado oficial con logo institucional y títulos limpios.
+  * [KpiCard.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/common/KpiCard.tsx): Tarjeta métrica estandarizada con iconos, valores, subtextos y estilos.
   * [ReporteAccionesBar.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/common/ReporteAccionesBar.tsx): Barra de botones estandarizada (Descargar Excel, PDF, Enviar por Correo, Recargar).
   * [ModalEnvioCorreo.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/common/ModalEnvioCorreo.tsx): Modal unificado de envío SMTP con gestión de adjuntos y validaciones.
 * [ReporteTiemposSla.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/ReporteTiemposSla.tsx): Componente autónomo para el Reporte 1 (tiempos de tránsito, SLA, gráficos y exportaciones).
 * [ReporteMuestrasRechazadas.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/ReporteMuestrasRechazadas.tsx): Componente autónomo para el Reporte 2 (bioseguridad, rechazos, causas raíz y auditoría).
 * [ReporteRendimientoClinico.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/ReporteRendimientoClinico.tsx): Componente autónomo para el Reporte 3 (rendimiento médico, ausentismo, derivaciones y prescripciones).
-* [ReportePlaceholder.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/ReportePlaceholder.tsx): Vista previa desacoplada para el reporte 4.
+* [ReporteEficaciaDiagnostica.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/ReporteEficaciaDiagnostica.tsx): Componente autónomo para el Reporte 4 (eficacia diagnóstica, positividad analítica, epidemiología canina/felina y analitos críticos).
 
 ### Backend (`vet_back/app/services/reportes/`)
-* [reportes_service.py](file:///d:/Cati/Veterinaria_DAO/vet_back/app/services/reportes_service.py): **Fachada unificada (`ReportesService`)** de ~140 líneas que expone una interfaz limpia a los endpoints y tests, delegando la lógica en los servicios especializados.
+* [reportes_service.py](file:///d:/Cati/Veterinaria_DAO/vet_back/app/services/reportes_service.py): **Fachada unificada (`ReportesService`)** que expone una interfaz limpia a los endpoints y tests, delegando la lógica en los servicios especializados.
 * [base.py](file:///d:/Cati/Veterinaria_DAO/vet_back/app/services/reportes/base.py): Constantes compartidas (ej. resolución de ruta del logo institucional `logo-patitas.png`).
-* [servicio_tiempos_sla.py](file:///d:/Cati/Veterinaria_DAO/vet_back/app/services/reportes/servicio_tiempos_sla.py): Servicio especializado para el Reporte 1 (SLA, cálculo de turnaround time, generación de Excel, PDF y correo).
-* [servicio_muestras_rechazadas.py](file:///d:/Cati/Veterinaria_DAO/vet_back/app/services/reportes/servicio_muestras_rechazadas.py): Servicio especializado para el Reporte 2 (auditoría sanitaria, cadena de frío, precintos, Excel, PDF y correo).
-* [servicio_rendimiento_clinico.py](file:///d:/Cati/Veterinaria_DAO/vet_back/app/services/reportes/servicio_rendimiento_clinico.py): Servicio especializado para el Reporte 3 (rendimiento médico, turnos vs consultas, derivaciones, Excel, PDF y correo).
+* [servicio_tiempos_sla.py](file:///d:/Cati/Veterinaria_DAO/vet_back/app/services/reportes/servicio_tiempos_sla.py): Servicio especializado para el Reporte 1 (SLA, turnaround time, openpyxl, reportlab, correo).
+* [servicio_muestras_rechazadas.py](file:///d:/Cati/Veterinaria_DAO/vet_back/app/services/reportes/servicio_muestras_rechazadas.py): Servicio especializado para el Reporte 2 (auditoría sanitaria, cadena de frío, precintos, openpyxl, reportlab, correo).
+* [servicio_rendimiento_clinico.py](file:///d:/Cati/Veterinaria_DAO/vet_back/app/services/reportes/servicio_rendimiento_clinico.py): Servicio especializado para el Reporte 3 (rendimiento médico, turnos vs consultas, derivaciones, openpyxl, reportlab, correo).
+* [servicio_eficacia_diagnostica.py](file:///d:/Cati/Veterinaria_DAO/vet_back/app/services/reportes/servicio_eficacia_diagnostica.py): Servicio especializado para el Reporte 4 (eficacia diagnóstica, positividad, correlación presuntiva, epidemiología por especie/edad, openpyxl, reportlab, correo).
 
 

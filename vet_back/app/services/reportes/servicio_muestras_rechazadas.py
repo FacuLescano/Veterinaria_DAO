@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.db.recepcion import obtener_sesion as obtener_sesion_recepcion
 from app.models.orden_analisis import Muestra
 from app.services.correo_service import ServicioCorreo
-from app.services.reportes.base import RUTA_LOGO
+from app.services.reportes.base import RUTA_LOGO, fecha_hora_argentina_str
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +127,7 @@ class ServicioMuestrasRechazadas:
         confiabilidad_transportistas.sort(key=lambda x: x["tasa_conformidad_porcentaje"], reverse=True)
 
         return {
-            "fecha_generacion": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "fecha_generacion": fecha_hora_argentina_str(),
             "kpis": {
                 "total_muestras_auditadas": total,
                 "muestras_aceptadas": cant_aceptadas,
