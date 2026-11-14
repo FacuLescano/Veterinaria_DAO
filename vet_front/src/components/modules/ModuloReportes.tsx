@@ -1,18 +1,18 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { 
   Clock, 
   ShieldAlert, 
   Stethoscope, 
   Microscope 
 } from 'lucide-react';
-
+import { useVeterinaria } from '../../context/VeterinariaContext';
 import { ReporteTiemposSla } from './reportes/ReporteTiemposSla';
 import { ReporteMuestrasRechazadas } from './reportes/ReporteMuestrasRechazadas';
 import { ReporteRendimientoClinico } from './reportes/ReporteRendimientoClinico';
 import { ReporteEficaciaDiagnostica } from './reportes/ReporteEficaciaDiagnostica';
 
 export const ModuloReportes: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'reporte1' | 'reporte2' | 'reporte3' | 'reporte4'>('reporte1');
+  const { activeReportTab, setActiveReportTab } = useVeterinaria();
 
   return (
     <div className="space-y-6">
@@ -21,17 +21,17 @@ export const ModuloReportes: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
           {/* Reporte 1 */}
           <button
-            onClick={() => setActiveTab('reporte1')}
+            onClick={() => setActiveReportTab('reporte1')}
             className={`p-3 text-left rounded-lg transition-all flex items-start gap-3 ${
-              activeTab === 'reporte1'
+              activeReportTab === 'reporte1'
                 ? 'bg-[#2D5864] text-white shadow-xs'
                 : 'hover:bg-neutral-50 text-neutral-700'
             }`}
           >
-            <Clock className={`w-5 h-5 shrink-0 mt-0.5 ${activeTab === 'reporte1' ? 'text-white' : 'text-[#2D5864]'}`} />
+            <Clock className={`w-5 h-5 shrink-0 mt-0.5 ${activeReportTab === 'reporte1' ? 'text-white' : 'text-[#2D5864]'}`} />
             <div className="min-w-0">
               <span className="font-semibold text-xs leading-tight block">1. Tránsito & SLA</span>
-              <p className={`text-[11px] mt-0.5 truncate ${activeTab === 'reporte1' ? 'text-white/80' : 'text-neutral-500'}`}>
+              <p className={`text-[11px] mt-0.5 truncate ${activeReportTab === 'reporte1' ? 'text-white/80' : 'text-neutral-500'}`}>
                 Tiempos de viaje, proceso y cumplimiento
               </p>
             </div>
@@ -39,17 +39,17 @@ export const ModuloReportes: React.FC = () => {
 
           {/* Reporte 2 */}
           <button
-            onClick={() => setActiveTab('reporte2')}
+            onClick={() => setActiveReportTab('reporte2')}
             className={`p-3 text-left rounded-lg transition-all flex items-start gap-3 ${
-              activeTab === 'reporte2'
+              activeReportTab === 'reporte2'
                 ? 'bg-[#2D5864] text-white shadow-xs'
                 : 'hover:bg-neutral-50 text-neutral-700'
             }`}
           >
-            <ShieldAlert className={`w-5 h-5 shrink-0 mt-0.5 ${activeTab === 'reporte2' ? 'text-white' : 'text-[#5F8E9C]'}`} />
+            <ShieldAlert className={`w-5 h-5 shrink-0 mt-0.5 ${activeReportTab === 'reporte2' ? 'text-white' : 'text-[#5F8E9C]'}`} />
             <div className="min-w-0">
               <span className="font-semibold text-xs leading-tight block">2. Muestras Rechazadas</span>
-              <p className={`text-[11px] mt-0.5 truncate ${activeTab === 'reporte2' ? 'text-white/80' : 'text-neutral-500'}`}>
+              <p className={`text-[11px] mt-0.5 truncate ${activeReportTab === 'reporte2' ? 'text-white/80' : 'text-neutral-500'}`}>
                 Bioseguridad, precintos y cadena de frío
               </p>
             </div>
@@ -57,17 +57,17 @@ export const ModuloReportes: React.FC = () => {
 
           {/* Reporte 3 */}
           <button
-            onClick={() => setActiveTab('reporte3')}
+            onClick={() => setActiveReportTab('reporte3')}
             className={`p-3 text-left rounded-lg transition-all flex items-start gap-3 ${
-              activeTab === 'reporte3'
+              activeReportTab === 'reporte3'
                 ? 'bg-[#2D5864] text-white shadow-xs'
                 : 'hover:bg-neutral-50 text-neutral-700'
             }`}
           >
-            <Stethoscope className={`w-5 h-5 shrink-0 mt-0.5 ${activeTab === 'reporte3' ? 'text-white' : 'text-[#5F8E9C]'}`} />
+            <Stethoscope className={`w-5 h-5 shrink-0 mt-0.5 ${activeReportTab === 'reporte3' ? 'text-white' : 'text-[#5F8E9C]'}`} />
             <div className="min-w-0">
               <span className="font-semibold text-xs leading-tight block">3. Rendimiento Médico</span>
-              <p className={`text-[11px] mt-0.5 truncate ${activeTab === 'reporte3' ? 'text-white/80' : 'text-neutral-500'}`}>
+              <p className={`text-[11px] mt-0.5 truncate ${activeReportTab === 'reporte3' ? 'text-white/80' : 'text-neutral-500'}`}>
                 Consultas, derivaciones y ausentismo
               </p>
             </div>
@@ -75,17 +75,17 @@ export const ModuloReportes: React.FC = () => {
 
           {/* Reporte 4 */}
           <button
-            onClick={() => setActiveTab('reporte4')}
+            onClick={() => setActiveReportTab('reporte4')}
             className={`p-3 text-left rounded-lg transition-all flex items-start gap-3 ${
-              activeTab === 'reporte4'
+              activeReportTab === 'reporte4'
                 ? 'bg-[#2D5864] text-white shadow-xs'
                 : 'hover:bg-neutral-50 text-neutral-700'
             }`}
           >
-            <Microscope className={`w-5 h-5 shrink-0 mt-0.5 ${activeTab === 'reporte4' ? 'text-white' : 'text-[#5F8E9C]'}`} />
+            <Microscope className={`w-5 h-5 shrink-0 mt-0.5 ${activeReportTab === 'reporte4' ? 'text-white' : 'text-[#5F8E9C]'}`} />
             <div className="min-w-0">
               <span className="font-semibold text-xs leading-tight block">4. Eficacia Diagnóstica</span>
-              <p className={`text-[11px] mt-0.5 truncate ${activeTab === 'reporte4' ? 'text-white/80' : 'text-neutral-500'}`}>
+              <p className={`text-[11px] mt-0.5 truncate ${activeReportTab === 'reporte4' ? 'text-white/80' : 'text-neutral-500'}`}>
                 Hallazgos críticos y positividad por especie
               </p>
             </div>
@@ -93,13 +93,13 @@ export const ModuloReportes: React.FC = () => {
         </div>
       </div>
 
-      {activeTab === 'reporte1' && <ReporteTiemposSla />}
+      {activeReportTab === 'reporte1' && <ReporteTiemposSla />}
       
-      {activeTab === 'reporte2' && <ReporteMuestrasRechazadas />}
+      {activeReportTab === 'reporte2' && <ReporteMuestrasRechazadas />}
 
-      {activeTab === 'reporte3' && <ReporteRendimientoClinico />}
+      {activeReportTab === 'reporte3' && <ReporteRendimientoClinico />}
 
-      {activeTab === 'reporte4' && <ReporteEficaciaDiagnostica />}
+      {activeReportTab === 'reporte4' && <ReporteEficaciaDiagnostica />}
     </div>
   );
 };

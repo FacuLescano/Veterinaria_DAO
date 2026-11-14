@@ -17,6 +17,13 @@ import {
   EstadoOrden,
   TipoAnalisis
 } from '../types/veterinaria';
+import {
+  parseCurrentRoute,
+  navigateToRoute,
+  MODULE_ROUTES,
+  REPORTE_ROUTES,
+  ReporteTabId
+} from '../utils/navigation';
 
 export type ActiveModule = 'pacientes' | 'ordenes' | 'despacho' | 'recepcion' | 'notificaciones' | 'reportes' | 'python';
 
@@ -43,6 +50,8 @@ interface VeterinariaContextType {
   // Navigation & UI state
   activeModule: ActiveModule;
   setActiveModule: (module: ActiveModule) => void;
+  activeReportTab: ReporteTabId;
+  setActiveReportTab: (tab: ReporteTabId) => void;
   isSidebarCollapsed: boolean;
   setIsSidebarCollapsed: (collapsed: boolean | ((prev: boolean) => boolean)) => void;
   isMobileMenuOpen: boolean;
@@ -167,13 +176,47 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [incidencias, setIncidencias] = useState<Incidencia[]>([]);
   const [resultados, setResultados] = useState<ResultadoAnalisis[]>([]);
 
-  // UI state
-  const [activeModule, setActiveModule] = useState<ActiveModule>('pacientes');
+  // UI & Navigation state sincronizado con URL
+  const initialRoute = parseCurrentRoute();
+  const [activeModule, setActiveModuleState] = useState<ActiveModule>(initialRoute.module);
+  const [activeReportTab, setActiveReportTabState] = useState<ReporteTabId>(initialRoute.reporteTab || 'reporte1');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedMascotaId, setSelectedMascotaId] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const veterinariosApiRef = useRef<any[]>([]);
+
+  const setActiveModule = (mod: ActiveModule) => {
+    setActiveModuleState(mod);
+    if (mod === 'reportes') {
+      navigateToRoute(REPORTE_ROUTES[activeReportTab] || '/reportes/1');
+    } else if (mod === 'python') {
+      navigateToRoute('/docs');
+    } else {
+      navigateToRoute(MODULE_ROUTES[mod] || `/${mod}`);
+    }
+  };
+
+  const setActiveReportTab = (tab: ReporteTabId) => {
+    setActiveReportTabState(tab);
+    if (activeModule !== 'reportes') {
+      setActiveModuleState('reportes');
+    }
+    navigateToRoute(REPORTE_ROUTES[tab]);
+  };
+
+  useEffect(() => {
+    const handleUrlChange = () => {
+      const route = parseCurrentRoute();
+      setActiveModuleState(route.module);
+      if (route.reporteTab) {
+        setActiveReportTabState(route.reporteTab);
+      }
+    };
+
+    window.addEventListener('popstate', handleUrlChange);
+    return () => window.removeEventListener('popstate', handleUrlChange);
+  }, []);
 
   useEffect(() => {
     let activo = true;
@@ -731,6 +774,8 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
         resultados,
         activeModule,
         setActiveModule,
+        activeReportTab,
+        setActiveReportTab,
         isSidebarCollapsed,
         setIsSidebarCollapsed,
         isMobileMenuOpen,

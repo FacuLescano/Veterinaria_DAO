@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { VeterinariaProvider, useVeterinaria } from './context/VeterinariaContext';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -13,18 +13,9 @@ import { ModuloReportes } from './components/modules/ModuloReportes';
 import { ArrowLeft, BookOpen } from 'lucide-react';
 
 const AppContent: React.FC = () => {
-  const { activeModule } = useVeterinaria();
-  const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
+  const { activeModule, setActiveModule } = useVeterinaria();
 
-  useEffect(() => {
-    const handlePopState = () => {
-      setCurrentPath(window.location.pathname);
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
-
-  const isDocsView = currentPath === '/docs' || currentPath === '/docs/' || window.location.hash.includes('docs');
+  const isDocsView = activeModule === 'python';
 
   if (isDocsView) {
     return (
@@ -34,8 +25,7 @@ const AppContent: React.FC = () => {
           <div className="flex items-center gap-3">
             <button
               onClick={() => {
-                window.history.pushState({}, '', '/');
-                setCurrentPath('/');
+                setActiveModule('pacientes');
               }}
               className="px-3 py-1.5 bg-[#FAF6EF] hover:bg-[#F2E8D8] text-[#2D5864] text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 border border-[#E7E2DA]"
             >
