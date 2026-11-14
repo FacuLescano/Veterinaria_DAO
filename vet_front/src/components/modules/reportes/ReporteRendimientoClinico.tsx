@@ -1,27 +1,20 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  Stethoscope, 
-  FlaskConical, 
-  CheckCircle2, 
-  AlertTriangle, 
-  Mail, 
-  FileSpreadsheet, 
-  FileText, 
-  RefreshCw, 
   Filter, 
   Search, 
   Calendar,
   CalendarCheck,
   CalendarX,
-  X,
-  Send,
-  Loader2,
   TrendingUp,
+  FlaskConical,
+  ClipboardList,
   Award,
-  ClipboardList
+  CheckCircle2,
+  Loader2
 } from 'lucide-react';
 import { useVeterinaria } from '../../../context/VeterinariaContext';
 import { ReporteRendimientoClinicoResponse } from './types';
+import { ReporteHeaderBanner, KpiCard, ReporteAccionesBar, ModalEnvioCorreo } from './common';
 
 export const ReporteRendimientoClinico: React.FC = () => {
   const { showToast } = useVeterinaria();
@@ -40,10 +33,6 @@ export const ReporteRendimientoClinico: React.FC = () => {
 
   // Modal Enviar por Correo
   const [modalEmailOpen, setModalEmailOpen] = useState(false);
-  const [emailDestinatario, setEmailDestinatario] = useState('');
-  const [asuntoEmail, setAsuntoEmail] = useState('');
-  const [adjuntarPdf, setAdjuntarPdf] = useState(true);
-  const [adjuntarExcel, setAdjuntarExcel] = useState(true);
   const [enviandoEmail, setEnviandoEmail] = useState(false);
 
   const cargarReporte3 = async () => {
@@ -123,17 +112,14 @@ export const ReporteRendimientoClinico: React.FC = () => {
     }
   };
 
-  const enviarEmail = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!emailDestinatario) return;
-
+  const enviarEmail = async (destinatario: string, asunto: string, incluirPdf: boolean, incluirExcel: boolean) => {
     setEnviandoEmail(true);
     try {
       const body = {
-        destinatario: emailDestinatario,
-        asunto: asuntoEmail || undefined,
-        incluir_pdf: adjuntarPdf,
-        incluir_excel: adjuntarExcel,
+        destinatario,
+        asunto: asunto || undefined,
+        incluir_pdf: incluirPdf,
+        incluir_excel: incluirExcel,
         fecha_desde: fechaDesde || undefined,
         fecha_hasta: fechaHasta || undefined,
         veterinario: filtroVet !== 'Todos' ? filtroVet : undefined,
@@ -154,7 +140,7 @@ export const ReporteRendimientoClinico: React.FC = () => {
       showToast({
         type: 'success',
         title: 'Correo de Rendimiento enviado',
-        description: data.mensaje || `El informe oficial fue enviado con éxito a ${emailDestinatario}.`
+        description: data.mensaje || `El informe oficial fue enviado con éxito a ${destinatario}.`
       });
       setModalEmailOpen(false);
     } catch (err: any) {
@@ -189,30 +175,13 @@ export const ReporteRendimientoClinico: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white border border-[#E7E2DA] rounded-xl p-4 shadow-xs flex items-center justify-between">
-        <div className="flex items-center gap-3.5">
-          <img
-            src="/assets/aistudio/Gemini_Generated_Image_o95dgio95dgio95d-removebg-preview_cbe90b76.png"
-            alt="Logo Patitas & Co."
-            className="w-11 h-11 object-contain"
-          />
-          <div>
-            <h3 className="font-bold text-sm text-[#2D5864] leading-tight">
-              PATITAS & CO. — RENDIMIENTO CLÍNICO Y TASA DE DERIVACIÓN MÉDICA
-            </h3>
-            <p className="text-xs text-neutral-500 mt-0.5">
-              Reporte 3: Auditoría de Consultas, Ausentismo y Prescripción de Laboratorio
-            </p>
-          </div>
-        </div>
-        <div className="text-right hidden sm:block">
-          <span className="text-[10px] font-mono text-neutral-400 block">Sede Central Córdoba</span>
-          <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full font-semibold border border-emerald-200">
-            Cuerpo Médico Activo · Gestión Clínica
-          </span>
-        </div>
-      </div>
+      {/* Banner Superior Reutilizable */}
+      <ReporteHeaderBanner
+        titulo="PATITAS & CO. — RENDIMIENTO CLÍNICO Y TASA DE DERIVACIÓN MÉDICA"
+        subtitulo="Reporte 3: Auditoría de Consultas, Ausentismo y Prescripción de Laboratorio"
+      />
 
+      {/* Barra de Filtros y Acciones */}
       <div className="bg-white border border-[#E7E2DA] rounded-xl p-4 shadow-xs space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-center gap-2">
@@ -220,44 +189,16 @@ export const ReporteRendimientoClinico: React.FC = () => {
             <span className="text-xs font-bold text-neutral-900 uppercase tracking-wider">Filtros Clínicos:</span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => void descargarArchivo('excel')}
-              className="px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs"
-              title="Descargar libro Excel con tablas y formato"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>Descargar Excel</span>
-            </button>
-
-            <button
-              onClick={() => void descargarArchivo('pdf')}
-              className="px-3 py-1.5 text-xs font-semibold text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs"
-              title="Descargar informe oficial en PDF"
-            >
-              <FileText className="w-3.5 h-3.5" />
-              <span>Descargar PDF</span>
-            </button>
-
-            <button
-              onClick={() => setModalEmailOpen(true)}
-              className="px-3 py-1.5 text-xs font-semibold text-white bg-[#2D5864] hover:bg-[#23454f] rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
-            >
-              <Mail className="w-3.5 h-3.5" />
-              <span>Enviar por Correo</span>
-            </button>
-
-            <button
-              onClick={() => void cargarReporte3()}
-              disabled={cargando3}
-              className="p-1.5 text-neutral-500 hover:text-[#2D5864] hover:bg-neutral-100 rounded-lg transition-colors"
-              title="Actualizar datos"
-            >
-              <RefreshCw className={`w-4 h-4 ${cargando3 ? 'animate-spin text-[#2D5864]' : ''}`} />
-            </button>
-          </div>
+          <ReporteAccionesBar
+            onDescargarExcel={() => void descargarArchivo('excel')}
+            onDescargarPdf={() => void descargarArchivo('pdf')}
+            onAbrirModalEmail={() => setModalEmailOpen(true)}
+            onRecargar={() => void cargarReporte3()}
+            cargando={cargando3}
+          />
         </div>
 
+        {/* Dropdowns de Filtrado */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 pt-2 border-t border-neutral-100 text-xs">
           <div>
             <label className="block text-[11px] font-semibold text-neutral-600 mb-1">Médico Veterinario</label>
@@ -333,98 +274,69 @@ export const ReporteRendimientoClinico: React.FC = () => {
         </div>
       </div>
 
+      {/* Tarjetas KPIs Reutilizables */}
       {kpis && (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          <div className="bg-white border border-[#E7E2DA] rounded-xl p-3.5 shadow-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Agendados</span>
-              <Calendar className="w-4 h-4 text-[#2D5864]" />
-            </div>
-            <div className="mt-2 flex items-baseline gap-1.5">
-              <span className="text-2xl font-bold text-[#2D5864]">
-                {kpis.total_turnos_agendados}
-              </span>
-              <span className="text-[10px] text-neutral-400">turnos</span>
-            </div>
-            <p className="text-[10px] text-neutral-500 mt-1">100% de la agenda</p>
-          </div>
-
-          <div className="bg-white border border-[#E7E2DA] rounded-xl p-3.5 shadow-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Atendidos</span>
-              <CalendarCheck className="w-4 h-4 text-emerald-600" />
-            </div>
-            <div className="mt-2 flex items-baseline gap-1.5">
-              <span className="text-2xl font-bold text-emerald-700">
-                {kpis.turnos_atendidos}
-              </span>
-              <span className="text-[10px] text-emerald-600 font-medium">
-                ({kpis.tasa_asistencia_porcentaje}%)
-              </span>
-            </div>
-            <p className="text-[10px] text-neutral-500 mt-1">Efectividad de asistencia</p>
-          </div>
-
-          <div className="bg-white border border-[#E7E2DA] rounded-xl p-3.5 shadow-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Ausentismo</span>
-              <CalendarX className="w-4 h-4 text-rose-600" />
-            </div>
-            <div className="mt-2 flex items-baseline gap-1.5">
-              <span className={`text-2xl font-bold ${kpis.tasa_ausentismo_porcentaje > 15 ? 'text-rose-700' : 'text-neutral-800'}`}>
-                {kpis.tasa_ausentismo_porcentaje}%
-              </span>
-            </div>
-            <p className="text-[10px] text-neutral-500 mt-1">{kpis.turnos_ausentes} ausencias registradas</p>
-          </div>
-
-          <div className="bg-white border border-[#E7E2DA] rounded-xl p-3.5 shadow-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Derivación Lab</span>
-              <TrendingUp className="w-4 h-4 text-teal-600" />
-            </div>
-            <div className="mt-2 flex items-baseline gap-1.5">
-              <span className="text-2xl font-bold text-teal-700">
-                {kpis.tasa_derivacion_global_porcentaje}%
-              </span>
-              <span className="text-[10px] text-teal-600 font-medium">
-                ({kpis.consultas_con_derivacion})
-              </span>
-            </div>
-            <p className="text-[10px] text-neutral-500 mt-1">De {kpis.turnos_atendidos} consultas</p>
-          </div>
-
-          <div className="bg-white border border-[#E7E2DA] rounded-xl p-3.5 shadow-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Órdenes Lab</span>
-              <FlaskConical className="w-4 h-4 text-[#2D5864]" />
-            </div>
-            <div className="mt-2 flex items-baseline gap-1.5">
-              <span className="text-2xl font-bold text-[#2D5864]">
-                {kpis.total_ordenes_laboratorio}
-              </span>
-              <span className="text-[10px] text-neutral-400">pedidos</span>
-            </div>
-            <p className="text-[10px] text-neutral-500 mt-1">Prescripciones a central</p>
-          </div>
-
-          <div className="bg-white border border-[#E7E2DA] rounded-xl p-3.5 shadow-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Determinaciones</span>
-              <ClipboardList className="w-4 h-4 text-indigo-600" />
-            </div>
-            <div className="mt-2 flex items-baseline gap-1.5">
-              <span className="text-2xl font-bold text-indigo-800">
-                {kpis.total_estudios_solicitados}
-              </span>
-              <span className="text-[10px] text-neutral-400 font-medium">análisis</span>
-            </div>
-            <p className="text-[10px] text-neutral-500 mt-1">Prom. {kpis.promedio_estudios_por_orden} por orden</p>
-          </div>
+          <KpiCard
+            titulo="Agendados"
+            valor={kpis.total_turnos_agendados}
+            unidad="turnos"
+            subtexto="100% de la agenda"
+            icono={Calendar}
+            colorIcono="text-[#2D5864]"
+            colorValor="text-[#2D5864]"
+          />
+          <KpiCard
+            titulo="Atendidos"
+            valor={kpis.turnos_atendidos}
+            unidad={`(${kpis.tasa_asistencia_porcentaje}%)`}
+            subtexto="Efectividad de asistencia"
+            icono={CalendarCheck}
+            colorIcono="text-emerald-600"
+            colorValor="text-emerald-700"
+          />
+          <KpiCard
+            titulo="Ausentismo"
+            valor={`${kpis.tasa_ausentismo_porcentaje}%`}
+            unidad="no-show"
+            subtexto={`${kpis.turnos_ausentes} ausencias registradas`}
+            icono={CalendarX}
+            colorIcono="text-rose-600"
+            colorValor={kpis.tasa_ausentismo_porcentaje > 15 ? 'text-rose-700' : 'text-neutral-800'}
+          />
+          <KpiCard
+            titulo="Derivación Lab"
+            valor={`${kpis.tasa_derivacion_global_porcentaje}%`}
+            unidad={`(${kpis.consultas_con_derivacion})`}
+            subtexto={`De ${kpis.turnos_atendidos} consultas`}
+            icono={TrendingUp}
+            colorIcono="text-teal-600"
+            colorValor="text-teal-700"
+          />
+          <KpiCard
+            titulo="Órdenes Lab"
+            valor={kpis.total_ordenes_laboratorio}
+            unidad="pedidos"
+            subtexto="Prescripciones a central"
+            icono={FlaskConical}
+            colorIcono="text-[#2D5864]"
+            colorValor="text-[#2D5864]"
+          />
+          <KpiCard
+            titulo="Determinaciones"
+            valor={kpis.total_estudios_solicitados}
+            unidad="análisis"
+            subtexto={`Prom. ${kpis.promedio_estudios_por_orden} por orden`}
+            icono={ClipboardList}
+            colorIcono="text-indigo-600"
+            colorValor="text-indigo-800"
+          />
         </div>
       )}
 
+      {/* Gráficos y Tablas Analíticas */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Columna Izquierda: Desempeño y Tasa de Derivación por Médico Veterinario */}
         <div className="bg-white border border-[#E7E2DA] rounded-xl p-5 shadow-xs space-y-4">
           <div className="flex items-center justify-between pb-2 border-b border-neutral-100">
             <div className="flex items-center gap-2">
@@ -478,6 +390,7 @@ export const ReporteRendimientoClinico: React.FC = () => {
           </div>
         </div>
 
+        {/* Columna Derecha: Top Estudios Prescriptos & Desglose de Estado de Citas */}
         <div className="bg-white border border-[#E7E2DA] rounded-xl p-5 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between pb-2 border-b border-neutral-100 mb-4">
@@ -525,6 +438,7 @@ export const ReporteRendimientoClinico: React.FC = () => {
         </div>
       </div>
 
+      {/* Tabla de Detalle de Consultas y Auditoría Clínica */}
       <div className="bg-white border border-[#E7E2DA] rounded-xl shadow-xs overflow-hidden">
         <div className="p-4 border-b border-[#E7E2DA] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#FAF8F5]">
           <div>
@@ -627,109 +541,17 @@ export const ReporteRendimientoClinico: React.FC = () => {
         </div>
       </div>
 
-      {modalEmailOpen && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-[#E7E2DA] rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="p-4 border-b border-[#E7E2DA] flex items-center justify-between bg-[#FAF8F5]">
-              <div className="flex items-center gap-2">
-                <Mail className="w-4 h-4 text-[#2D5864]" />
-                <h4 className="font-bold text-sm text-[#2D5864]">
-                  Enviar Reporte por Correo Electrónico
-                </h4>
-              </div>
-              <button
-                onClick={() => setModalEmailOpen(false)}
-                className="text-neutral-400 hover:text-neutral-700 p-1 rounded-lg"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={enviarEmail} className="p-5 space-y-4 text-xs">
-              <div>
-                <label className="block text-neutral-700 font-semibold mb-1">
-                  Correo Electrónico Destinatario *
-                </label>
-                <input
-                  type="email"
-                  required
-                  placeholder="ejemplo@veterinaria.com"
-                  value={emailDestinatario}
-                  onChange={e => setEmailDestinatario(e.target.value)}
-                  className="w-full p-2.5 border border-[#E7E2DA] rounded-lg text-neutral-900 focus:ring-1 focus:ring-[#2D5864] focus:outline-hidden"
-                />
-                <span className="text-[10px] text-neutral-400 mt-1 block">
-                  Se enviará mediante el servidor SMTP oficial configurado en el sistema.
-                </span>
-              </div>
-
-              <div>
-                <label className="block text-neutral-700 font-semibold mb-1">
-                  Asunto del Correo (Opcional)
-                </label>
-                <input
-                  type="text"
-                  placeholder="Auditoría Médica: Rendimiento Clínico y Derivación — Patitas & Co."
-                  value={asuntoEmail}
-                  onChange={e => setAsuntoEmail(e.target.value)}
-                  className="w-full p-2.5 border border-[#E7E2DA] rounded-lg text-neutral-900 focus:ring-1 focus:ring-[#2D5864] focus:outline-hidden"
-                />
-              </div>
-
-              <div className="bg-[#FAF8F5] p-3 rounded-lg border border-[#F2E8D8] space-y-2">
-                <span className="font-semibold text-neutral-800 block text-[11px]">Archivos adjuntos a incluir:</span>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={adjuntarPdf}
-                    onChange={e => setAdjuntarPdf(e.target.checked)}
-                    className="w-4 h-4 rounded text-[#2D5864] border-neutral-300 focus:ring-[#2D5864]"
-                  />
-                  <span className="text-neutral-700 font-medium">Acta Médica Oficial en PDF (.pdf)</span>
-                </label>
-
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={adjuntarExcel}
-                    onChange={e => setAdjuntarExcel(e.target.checked)}
-                    className="w-4 h-4 rounded text-[#2D5864] border-neutral-300 focus:ring-[#2D5864]"
-                  />
-                  <span className="text-neutral-700 font-medium">Libro de Consultas y Prescripciones en Excel (.xlsx)</span>
-                </label>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-100">
-                <button
-                  type="button"
-                  onClick={() => setModalEmailOpen(false)}
-                  disabled={enviandoEmail}
-                  className="px-3.5 py-2 text-neutral-600 hover:bg-neutral-100 rounded-lg transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={enviandoEmail || !emailDestinatario}
-                  className="px-4 py-2 font-semibold text-white bg-[#2D5864] hover:bg-[#23454f] rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 shadow-xs"
-                >
-                  {enviandoEmail ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Enviando...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Send className="w-3.5 h-3.5" />
-                      <span>Enviar Informe</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Modal Reutilizable */}
+      <ModalEnvioCorreo
+        isOpen={modalEmailOpen}
+        onClose={() => setModalEmailOpen(false)}
+        onEnviar={enviarEmail}
+        enviando={enviandoEmail}
+        tituloReporte="Auditoría Médica: Rendimiento Clínico y Derivación"
+        placeholderAsunto="Auditoría Médica: Rendimiento Clínico y Derivación — Patitas & Co."
+        etiquetaPdf="Acta Médica Oficial en PDF (.pdf)"
+        etiquetaExcel="Libro de Consultas y Prescripciones en Excel (.xlsx)"
+      />
     </div>
   );
 };

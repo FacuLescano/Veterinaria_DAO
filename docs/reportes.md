@@ -227,6 +227,11 @@ Para mantener el código mantenible, desacoplado y evitar archivos monolíticos,
 ### Frontend (`vet_front/src/components/modules/reportes/`)
 * [ModuloReportes.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/ModuloReportes.tsx): Contenedor orquestador liviano (~130 líneas) responsable de la barra de navegación de pestañas.
 * [types.ts](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/types.ts): Definiciones TypeScript comunes e interfaces de datos de los reportes.
+* `common/`: Componentes transversales reutilizables para garantizar consistencia visual y no duplicar código:
+  * [ReporteHeaderBanner.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/common/ReporteHeaderBanner.tsx): Encabezado oficial con logo institucional, títulos y acreditación.
+  * [KpiCard.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/common/KpiCard.tsx): Tarjeta métrica estandarizada con iconos, valores, subtextos y alertas.
+  * [ReporteAccionesBar.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/common/ReporteAccionesBar.tsx): Barra de botones estandarizada (Descargar Excel, PDF, Enviar por Correo, Recargar).
+  * [ModalEnvioCorreo.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/common/ModalEnvioCorreo.tsx): Modal unificado de envío SMTP con gestión de adjuntos y validaciones.
 * [ReporteTiemposSla.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/ReporteTiemposSla.tsx): Componente autónomo para el Reporte 1 (tiempos de tránsito, SLA, gráficos y exportaciones).
 * [ReporteMuestrasRechazadas.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/ReporteMuestrasRechazadas.tsx): Componente autónomo para el Reporte 2 (bioseguridad, rechazos, causas raíz y auditoría).
 * [ReporteRendimientoClinico.tsx](file:///d:/Cati/Veterinaria_DAO/vet_front/src/components/modules/reportes/ReporteRendimientoClinico.tsx): Componente autónomo para el Reporte 3 (rendimiento médico, ausentismo, derivaciones y prescripciones).

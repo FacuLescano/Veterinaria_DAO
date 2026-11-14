@@ -30,14 +30,7 @@ export const ModuloReportes: React.FC = () => {
           >
             <Clock className={`w-5 h-5 shrink-0 mt-0.5 ${activeTab === 'reporte1' ? 'text-white' : 'text-[#2D5864]'}`} />
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <span className="font-semibold text-xs leading-tight">1. Tránsito & SLA</span>
-                <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold ${
-                  activeTab === 'reporte1' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
-                }`}>
-                  Activo
-                </span>
-              </div>
+              <span className="font-semibold text-xs leading-tight block">1. Tránsito & SLA</span>
               <p className={`text-[11px] mt-0.5 truncate ${activeTab === 'reporte1' ? 'text-white/80' : 'text-neutral-500'}`}>
                 Tiempos de viaje, proceso y cumplimiento
               </p>
@@ -55,14 +48,7 @@ export const ModuloReportes: React.FC = () => {
           >
             <ShieldAlert className={`w-5 h-5 shrink-0 mt-0.5 ${activeTab === 'reporte2' ? 'text-white' : 'text-[#5F8E9C]'}`} />
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <span className="font-semibold text-xs leading-tight">2. Muestras Rechazadas</span>
-                <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold ${
-                  activeTab === 'reporte2' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
-                }`}>
-                  Activo
-                </span>
-              </div>
+              <span className="font-semibold text-xs leading-tight block">2. Muestras Rechazadas</span>
               <p className={`text-[11px] mt-0.5 truncate ${activeTab === 'reporte2' ? 'text-white/80' : 'text-neutral-500'}`}>
                 Bioseguridad, precintos y cadena de frío
               </p>
@@ -80,14 +66,7 @@ export const ModuloReportes: React.FC = () => {
           >
             <Stethoscope className={`w-5 h-5 shrink-0 mt-0.5 ${activeTab === 'reporte3' ? 'text-white' : 'text-[#5F8E9C]'}`} />
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <span className="font-semibold text-xs leading-tight">3. Rendimiento Médico</span>
-                <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold ${
-                  activeTab === 'reporte3' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
-                }`}>
-                  Activo
-                </span>
-              </div>
+              <span className="font-semibold text-xs leading-tight block">3. Rendimiento Médico</span>
               <p className={`text-[11px] mt-0.5 truncate ${activeTab === 'reporte3' ? 'text-white/80' : 'text-neutral-500'}`}>
                 Consultas, derivaciones y ausentismo
               </p>
@@ -105,12 +84,7 @@ export const ModuloReportes: React.FC = () => {
           >
             <Microscope className={`w-5 h-5 shrink-0 mt-0.5 ${activeTab === 'reporte4' ? 'text-white' : 'text-[#5F8E9C]'}`} />
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <span className="font-semibold text-xs leading-tight">4. Eficacia Diagnóstica</span>
-                <span className="text-[9px] px-1.5 py-0.2 rounded-full font-bold bg-amber-100 text-amber-800">
-                  Próximo
-                </span>
-              </div>
+              <span className="font-semibold text-xs leading-tight block">4. Eficacia Diagnóstica</span>
               <p className={`text-[11px] mt-0.5 truncate ${activeTab === 'reporte4' ? 'text-white/80' : 'text-neutral-500'}`}>
                 Hallazgos críticos y positividad por especie
               </p>
