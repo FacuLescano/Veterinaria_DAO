@@ -73,7 +73,8 @@ export const Modulo2OrdenesMuestras: React.FC = () => {
   useEffect(() => {
     if (mascotas.length && !mascotas.some((m) => m.id === newOrdenData.mascotaId)) setNewOrdenData((d) => ({ ...d, mascotaId: mascotas[0].id }));
     if (ordenes.length && !ordenes.some((o) => o.id === newMuestraData.ordenId)) setNewMuestraData((d) => ({ ...d, ordenId: ordenes[0].id }));
-    if (muestras.length && !muestras.some((m) => m.id === vincularData.muestraId)) setVincularData((d) => ({ ...d, muestraId: muestras[0].id }));
+    const disponibles = muestras.filter((m) => m.estadoActual === 'Extraída');
+    if (disponibles.length && !disponibles.some((m) => m.id === vincularData.muestraId)) setVincularData((d) => ({ ...d, muestraId: disponibles[0].id }));
   }, [mascotas, ordenes, muestras, newOrdenData.mascotaId, newMuestraData.ordenId, vincularData.muestraId]);
 
   // Handlers
@@ -155,7 +156,7 @@ export const Modulo2OrdenesMuestras: React.FC = () => {
     setVincularData({
       ordenId: ord.id,
       detalleId: unlinkedDetalle ? unlinkedDetalle.id : (ord.detalles[0]?.id || ''),
-      muestraId: muestras[0]?.id || ''
+      muestraId: muestras.find((m) => m.estadoActual === 'Extraída')?.id || ''
     });
     setIsVincularModalOpen(true);
   };
@@ -697,7 +698,7 @@ export const Modulo2OrdenesMuestras: React.FC = () => {
               onChange={e => setVincularData({ ...vincularData, muestraId: e.target.value })}
               className="w-full p-2 bg-white border border-[#E7E2DA] rounded-lg font-mono"
             >
-              {muestras.map(m => (
+              {muestras.filter(m => m.estadoActual === 'Extraída').map(m => (
                 <option key={m.id} value={m.id}>
                   {m.id} — {m.identificacionFisica} ({m.tipoMaterial} · {m.estadoActual})
                 </option>
@@ -715,6 +716,7 @@ export const Modulo2OrdenesMuestras: React.FC = () => {
             </button>
             <button
               type="submit"
+              disabled={!muestras.some(m => m.id === vincularData.muestraId && m.estadoActual === 'Extraída')}
               className="px-4 py-2 font-semibold text-white bg-[#2D5864] hover:bg-[#23454f] rounded-lg transition-colors"
             >
               Confirmar Vinculación

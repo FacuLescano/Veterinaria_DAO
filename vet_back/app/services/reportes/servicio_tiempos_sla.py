@@ -72,7 +72,12 @@ class ServicioTiemposSla:
             ]
 
         total_muestras = len(detalles_muestras)
-        muestras_finalizadas = [d for d in detalles_muestras if d["tiempo_total_horas"] is not None]
+        muestras_finalizadas = [
+            d for d in detalles_muestras
+            if all(d[campo] is not None and d[campo] >= 0 for campo in (
+                "tiempo_transito_horas", "tiempo_procesamiento_horas", "tiempo_total_horas"
+            ))
+        ]
         total_finalizadas = len(muestras_finalizadas)
 
         if total_finalizadas > 0:
@@ -172,7 +177,7 @@ class ServicioTiemposSla:
             muestras_recepcion = recepciones_sesion.scalars(select(RecepcionEnvio)).all()
             resultados_recepcion = recepciones_sesion.scalars(select(ResultadoAnalisis)).all()
 
-            recepciones_por_remito = {r.remito_id: r for r in muestras_recepcion}
+            recepciones_por_envio = {str(r.envio_id): r for r in muestras_recepcion}
             resultados_por_muestra = {str(res.muestra_id): res for res in resultados_recepcion if res.muestra_id}
 
             muestras_db = self.db.scalars(select(Muestra)).all()
@@ -184,12 +189,12 @@ class ServicioTiemposSla:
                 envio = m.envio
 
                 if envio and envio.fecha_despacho:
-                    recepcion = recepciones_por_remito.get(envio.remito_id) or recepciones_por_remito.get(envio.id)
+                    recepcion = recepciones_por_envio.get(str(envio.id))
                     resultado = resultados_por_muestra.get(str(m.id)) or resultados_por_muestra.get(m.codigo_etiqueta)
 
                     fecha_desp = envio.fecha_despacho
                     fecha_rec = recepcion.fecha_recepcion if recepcion else None
-                    fecha_res = resultado.fecha_recepcion if resultado else None
+                    fecha_res = self._fecha_resultado_valida(resultado, fecha_rec) if resultado else None
 
                     t_transito = None
                     if fecha_rec and fecha_desp:
@@ -206,206 +211,48 @@ class ServicioTiemposSla:
                         delta = fecha_res - fecha_desp
                         t_total = round(delta.total_seconds() / 3600.0, 1)
 
-                    prioridad = orden.prioridad if orden else "Normal"
-                    tipo_nombre = orden.detalles[0].tipo_analisis.nombre if (orden and orden.detalles) else "Hemograma Completo"
+                    prioridad = "Urgente" if orden and "prioridad urgente" in (orden.observaciones or "").lower() else "Normal"
+                    tipo_nombre = orden.detalles[0].tipo_analisis.nombre if (orden and orden.detalles) else "Sin análisis vinculado"
                     sla_obj = self.obtener_sla_objetivo(tipo_nombre, prioridad)
-                    cumple = (t_total <= sla_obj) if t_total is not None else True
+                    cumple = (t_total <= sla_obj) if t_total is not None else None
                     dif_sla = round(t_total - sla_obj, 1) if t_total is not None else 0.0
 
                     registros.append({
                         "muestra_codigo": m.codigo_etiqueta,
-                        "paciente_nombre": pet.name if pet else "Luna",
-                        "especie": pet.species if pet else "Canino",
-                        "tutor_nombre": resp.full_name if resp else "María Cecilia González",
+                        "paciente_nombre": pet.name if pet else "Sin dato",
+                        "especie": pet.species if pet else "Sin dato",
+                        "tutor_nombre": resp.full_name if resp else "Sin dato",
                         "tipo_analisis": tipo_nombre,
                         "prioridad": prioridad,
-                        "transportista": envio.transportista or "Transportes BioLog (Roberto Gómez)",
+                        "transportista": envio.transportista or "Sin dato",
                         "remito_numero": envio.remito.numero if envio.remito else f"REM-{envio.id:04d}",
                         "fecha_despacho": fecha_desp.strftime("%Y-%m-%d %H:%M"),
-                        "fecha_recepcion_lab": fecha_rec.strftime("%Y-%m-%d %H:%M") if fecha_rec else "En tránsito",
-                        "fecha_resultado": fecha_res.strftime("%Y-%m-%d %H:%M") if fecha_res else "Pendiente",
-                        "tiempo_transito_horas": t_transito if t_transito is not None else 3.5,
-                        "tiempo_procesamiento_horas": t_proc if t_proc is not None else 14.2,
-                        "tiempo_total_horas": t_total if t_total is not None else 17.7,
+                        "fecha_recepcion_lab": fecha_rec.strftime("%Y-%m-%d %H:%M") if fecha_rec else "Pendiente",
+                        "fecha_resultado": fecha_res.strftime("%Y-%m-%d %H:%M") if fecha_res else "Fecha inconsistente" if resultado else "Pendiente",
+                        "tiempo_transito_horas": t_transito,
+                        "tiempo_procesamiento_horas": t_proc,
+                        "tiempo_total_horas": t_total,
                         "sla_objetivo_horas": sla_obj,
-                        "diferencia_sla_horas": dif_sla,
+                        "diferencia_sla_horas": dif_sla if t_total is not None else None,
                         "cumple_sla": cumple,
-                        "estado_analisis": "Validado" if fecha_res else "En proceso",
+                        "estado_analisis": "Validado" if fecha_res else "Fecha inconsistente" if resultado else "En proceso",
                     })
         except Exception as error:
-            logger.warning("No se pudieron extraer registros completos de BD (%s), se complementa con semillas", error)
-
-        # Si hay pocos registros en BD (base recién creada), complementamos con el dataset demostrativo del dominio
-        if len(registros) < 6:
-            registros.extend(self._generar_dataset_demostrativo())
+            logger.warning("No se pudieron extraer registros completos de BD para Reporte 1 (%s)", error)
 
         return registros
 
-    def _generar_dataset_demostrativo(self) -> list[dict[str, Any]]:
-        """Dataset inicial representativo y verificado para demostración del TP."""
-        base_datos = [
-            {
-                "muestra_codigo": "MUE-9101",
-                "paciente_nombre": "Luna",
-                "especie": "Canino",
-                "tutor_nombre": "María Cecilia González",
-                "tipo_analisis": "Hemograma Completo",
-                "prioridad": "Urgente",
-                "transportista": "Transportes BioLog (Roberto Gómez)",
-                "remito_numero": "REM-2026-012",
-                "fecha_despacho": "2026-11-09 11:30",
-                "fecha_recepcion_lab": "2026-11-09 14:45",
-                "fecha_resultado": "2026-11-09 20:15",
-                "tiempo_transito_horas": 3.2,
-                "tiempo_procesamiento_horas": 5.5,
-                "tiempo_total_horas": 8.7,
-                "sla_objetivo_horas": 12.0,
-                "diferencia_sla_horas": -3.3,
-                "cumple_sla": True,
-                "estado_analisis": "Validado",
-            },
-            {
-                "muestra_codigo": "MUE-9102",
-                "paciente_nombre": "Luna",
-                "especie": "Canino",
-                "tutor_nombre": "María Cecilia González",
-                "tipo_analisis": "Perfil Bioquímico Hepático",
-                "prioridad": "Normal",
-                "transportista": "Transportes BioLog (Roberto Gómez)",
-                "remito_numero": "REM-2026-012",
-                "fecha_despacho": "2026-11-09 11:30",
-                "fecha_recepcion_lab": "2026-11-09 14:45",
-                "fecha_resultado": "2026-11-10 09:20",
-                "tiempo_transito_horas": 3.2,
-                "tiempo_procesamiento_horas": 18.6,
-                "tiempo_total_horas": 21.8,
-                "sla_objetivo_horas": 24.0,
-                "diferencia_sla_horas": -2.2,
-                "cumple_sla": True,
-                "estado_analisis": "Validado",
-            },
-            {
-                "muestra_codigo": "MUE-8840",
-                "paciente_nombre": "Milo",
-                "especie": "Felino",
-                "tutor_nombre": "Carlos Eduardo Benítez",
-                "tipo_analisis": "Perfil Renal (Urea y Creatinina)",
-                "prioridad": "Urgente",
-                "transportista": "Envío Express Vet (Marcos Díaz)",
-                "remito_numero": "REM-2026-009",
-                "fecha_despacho": "2026-11-08 09:00",
-                "fecha_recepcion_lab": "2026-11-08 12:15",
-                "fecha_resultado": "2026-11-08 23:45",
-                "tiempo_transito_horas": 3.2,
-                "tiempo_procesamiento_horas": 11.5,
-                "tiempo_total_horas": 14.7,
-                "sla_objetivo_horas": 12.0,
-                "diferencia_sla_horas": 2.7,
-                "cumple_sla": False,
-                "estado_analisis": "Validado",
-            },
-            {
-                "muestra_codigo": "MUE-8841",
-                "paciente_nombre": "Milo",
-                "especie": "Felino",
-                "tutor_nombre": "Carlos Eduardo Benítez",
-                "tipo_analisis": "Orina Completa y Sedimento",
-                "prioridad": "Normal",
-                "transportista": "Envío Express Vet (Marcos Díaz)",
-                "remito_numero": "REM-2026-009",
-                "fecha_despacho": "2026-11-08 09:00",
-                "fecha_recepcion_lab": "2026-11-08 12:15",
-                "fecha_resultado": "2026-11-09 08:30",
-                "tiempo_transito_horas": 3.2,
-                "tiempo_procesamiento_horas": 20.2,
-                "tiempo_total_horas": 23.5,
-                "sla_objetivo_horas": 24.0,
-                "diferencia_sla_horas": -0.5,
-                "cumple_sla": True,
-                "estado_analisis": "Validado",
-            },
-            {
-                "muestra_codigo": "MUE-7620",
-                "paciente_nombre": "Thor",
-                "especie": "Canino",
-                "tutor_nombre": "Lucía Mariana Velez",
-                "tipo_analisis": "Citología Cutánea / PAAF",
-                "prioridad": "Normal",
-                "transportista": "Logística Sanitaria Sur (Andrés Paz)",
-                "remito_numero": "REM-2026-005",
-                "fecha_despacho": "2026-11-06 14:00",
-                "fecha_recepcion_lab": "2026-11-06 18:30",
-                "fecha_resultado": "2026-11-08 11:20",
-                "tiempo_transito_horas": 4.5,
-                "tiempo_procesamiento_horas": 40.8,
-                "tiempo_total_horas": 45.3,
-                "sla_objetivo_horas": 48.0,
-                "diferencia_sla_horas": -2.7,
-                "cumple_sla": True,
-                "estado_analisis": "Validado",
-            },
-            {
-                "muestra_codigo": "MUE-7510",
-                "paciente_nombre": "Simón",
-                "especie": "Felino",
-                "tutor_nombre": "Fernando G. Rossi",
-                "tipo_analisis": "Dosaje Hormonal (T4 / Cortisol)",
-                "prioridad": "Normal",
-                "transportista": "Transportes BioLog (Roberto Gómez)",
-                "remito_numero": "REM-2026-004",
-                "fecha_despacho": "2026-11-05 10:15",
-                "fecha_recepcion_lab": "2026-11-05 13:40",
-                "fecha_resultado": "2026-11-07 16:30",
-                "tiempo_transito_horas": 3.4,
-                "tiempo_procesamiento_horas": 50.8,
-                "tiempo_total_horas": 54.2,
-                "sla_objetivo_horas": 72.0,
-                "diferencia_sla_horas": -17.8,
-                "cumple_sla": True,
-                "estado_analisis": "Validado",
-            },
-            {
-                "muestra_codigo": "MUE-6901",
-                "paciente_nombre": "Kira",
-                "especie": "Canino",
-                "tutor_nombre": "Valeria S. Morales",
-                "tipo_analisis": "Hemograma Completo",
-                "prioridad": "Urgente",
-                "transportista": "Envío Express Vet (Marcos Díaz)",
-                "remito_numero": "REM-2026-002",
-                "fecha_despacho": "2026-11-03 16:00",
-                "fecha_recepcion_lab": "2026-11-03 19:45",
-                "fecha_resultado": "2026-11-04 06:15",
-                "tiempo_transito_horas": 3.7,
-                "tiempo_procesamiento_horas": 10.5,
-                "tiempo_total_horas": 14.3,
-                "sla_objetivo_horas": 12.0,
-                "diferencia_sla_horas": 2.3,
-                "cumple_sla": False,
-                "estado_analisis": "Validado",
-            },
-            {
-                "muestra_codigo": "MUE-6415",
-                "paciente_nombre": "Boby",
-                "especie": "Canino",
-                "tutor_nombre": "Ignacio R. Herrera",
-                "tipo_analisis": "Coproparasitológico Seriado",
-                "prioridad": "Normal",
-                "transportista": "Logística Sanitaria Sur (Andrés Paz)",
-                "remito_numero": "REM-2026-001",
-                "fecha_despacho": "2026-11-01 11:00",
-                "fecha_recepcion_lab": "2026-11-01 16:00",
-                "fecha_resultado": "2026-11-02 18:30",
-                "tiempo_transito_horas": 5.0,
-                "tiempo_procesamiento_horas": 26.5,
-                "tiempo_total_horas": 31.5,
-                "sla_objetivo_horas": 48.0,
-                "diferencia_sla_horas": -16.5,
-                "cumple_sla": True,
-                "estado_analisis": "Validado",
-            },
-        ]
-        return base_datos
+    @staticmethod
+    def _fecha_resultado_valida(resultado: ResultadoAnalisis, fecha_ingreso: datetime | None) -> datetime | None:
+        """Usa la fecha de registro si un gateway heredado guardó el resultado antes del ingreso."""
+        fecha_resultado = resultado.fecha_recepcion
+        if fecha_resultado is None or fecha_ingreso is None or fecha_resultado >= fecha_ingreso:
+            return fecha_resultado
+
+        fecha_registro = resultado.creado_en
+        if fecha_registro is not None and fecha_registro >= fecha_ingreso:
+            return fecha_registro
+        return None
 
     def exportar_excel(self, datos: dict[str, Any]) -> bytes:
         import openpyxl

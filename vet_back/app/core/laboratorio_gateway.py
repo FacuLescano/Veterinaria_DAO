@@ -1,5 +1,5 @@
 """Contrato y adaptador determinista para consultar resultados externos."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Protocol
 
@@ -17,7 +17,7 @@ class RespuestaLaboratorio:
     estado: str
     resultados: list[ResultadoExterno]
     mensaje: str = ""
-    fecha_recepcion: datetime = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    fecha_recepcion: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class LaboratorioGateway(Protocol):

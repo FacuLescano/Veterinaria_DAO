@@ -40,10 +40,14 @@ def test_mock_ofrece_escenarios_deterministas_y_analisis_del_catalogo(datos_prue
         muestra = db.get(Muestra, muestra_id)
         analisis = [{"detalle_id": str(a.detalle.id), "nombre": a.detalle.tipo_analisis.nombre} for a in muestra.asociaciones_detalles]
         gateway = LaboratorioMock()
+        instante_antes = datetime.now(timezone.utc)
         primera = gateway.consultar_resultados(str(muestra_id), analisis, "multiples")
         segunda = gateway.consultar_resultados(str(muestra_id), analisis, "multiples")
+        instante_despues = datetime.now(timezone.utc)
         completa = gateway.consultar_resultados(str(muestra_id), analisis, "completo")
-        assert primera == segunda
+        assert primera.resultados == segunda.resultados
+        assert instante_antes <= primera.fecha_recepcion <= instante_despues
+        assert instante_antes <= segunda.fecha_recepcion <= instante_despues
         assert len(completa.resultados) == len(analisis)
         assert completa.resultados[0].valores != primera.resultados[0].valores
         assert {r.detalle_id for r in primera.resultados} == {str(i) for i in detalle_ids}

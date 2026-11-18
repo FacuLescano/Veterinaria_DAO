@@ -59,22 +59,25 @@ class ServicioMuestrasRechazadas:
                 if (d.get("estado_muestra") or "").strip().lower() == estado_filtro.strip().lower()
             ]
 
-        total = len(detalles)
-        rechazadas = [d for d in detalles if d["estado_muestra"] == "Rechazada"]
-        aceptadas = [d for d in detalles if d["estado_muestra"] == "Aceptada"]
+        auditables = [d for d in detalles if d["estado_muestra"] in {"Rechazada", "Aceptada"}]
+        total = len(auditables)
+        rechazadas = [d for d in auditables if d["estado_muestra"] == "Rechazada"]
+        aceptadas = [d for d in auditables if d["estado_muestra"] == "Aceptada"]
         cant_rechazadas = len(rechazadas)
         cant_aceptadas = len(aceptadas)
 
         tasa_rechazo = round((cant_rechazadas / total) * 100, 1) if total > 0 else 0.0
-        tasa_conformidad = round((cant_aceptadas / total) * 100, 1) if total > 0 else 100.0
+        tasa_conformidad = round((cant_aceptadas / total) * 100, 1) if total > 0 else 0.0
 
-        precintos_integros = sum(1 for d in detalles if d["estado_precinto"] == "Integro")
-        precintos_fallados = total - precintos_integros
-        integridad_precintos = round((precintos_integros / total) * 100, 1) if total > 0 else 100.0
+        precintos_verificados = [d for d in detalles if d["estado_precinto"] in {"Integro", "Roto", "Ausente"}]
+        precintos_integros = sum(1 for d in precintos_verificados if d["estado_precinto"] == "Integro")
+        precintos_fallados = len(precintos_verificados) - precintos_integros
+        integridad_precintos = round((precintos_integros / len(precintos_verificados)) * 100, 1) if precintos_verificados else 0.0
 
-        temp_en_rango = sum(1 for d in detalles if d["temperatura_conforme"])
-        excursiones = total - temp_en_rango
-        conformidad_frio = round((temp_en_rango / total) * 100, 1) if total > 0 else 100.0
+        temperaturas_medidas = [d for d in detalles if d["temperatura_conforme"] is not None]
+        temp_en_rango = sum(1 for d in temperaturas_medidas if d["temperatura_conforme"])
+        excursiones = len(temperaturas_medidas) - temp_en_rango
+        conformidad_frio = round((temp_en_rango / len(temperaturas_medidas)) * 100, 1) if temperaturas_medidas else 0.0
 
         # Causas Raíz de Rechazo
         por_causa: dict[str, int] = {}
@@ -95,7 +98,7 @@ class ServicioMuestrasRechazadas:
 
         # Rendimiento y Confiabilidad por Transportista
         por_transp: dict[str, list[dict[str, Any]]] = {}
-        for d in detalles:
+        for d in auditables:
             por_transp.setdefault(d["transportista"], []).append(d)
 
         confiabilidad_transportistas = []
@@ -173,18 +176,23 @@ class ServicioMuestrasRechazadas:
                 if envio:
                     incidencia = incidencias_por_muestra.get(str(m.id)) or incidencias_por_muestra.get(m.codigo_etiqueta)
                     verif = verif_por_envio.get(str(envio.id))
-                    estado_precinto = verif.estado.capitalize() if verif else "Integro"
+                    estados_precinto = {
+                        "integro": "Integro", "roto": "Roto", "ausente": "Ausente",
+                        "otra_anomalia": "Otra anomalía",
+                    }
+                    estado_precinto = estados_precinto.get(verif.estado.lower(), "Sin dato") if verif else "Sin dato"
 
-                    temp_salida = 4.5
-                    temp_llegada = 5.2
+                    temp_salida = None
+                    temp_llegada = None
                     if envio.registros_temperatura:
                         temp_salida = envio.registros_temperatura[0].temperatura_medida_c
                         temp_llegada = envio.registros_temperatura[-1].temperatura_medida_c
 
                     es_rechazada = (
                         m.estado == "rechazada"
-                        or estado_precinto in {"Roto", "Ausente", "Codigonocoincide"}
-                        or temp_llegada > 8.0
+                        or estado_precinto in {"Roto", "Ausente", "Otra anomalía"}
+                        or (verif is not None and verif.codigo_esperado is not None and verif.codigo_observado != verif.codigo_esperado)
+                        or (temp_llegada is not None and not 2.0 <= temp_llegada <= 8.0)
                         or (incidencia is not None and not incidencia.resolucion)
                     )
 
@@ -193,212 +201,36 @@ class ServicioMuestrasRechazadas:
                         causa = "Rotura o Violación de Precinto"
                     elif estado_precinto in {"Codigonocoincide", "Ausente"}:
                         causa = "Código de Precinto No Coincide / Ausente"
-                    elif temp_llegada > 8.0:
-                        causa = f"Excursión Térmica ({temp_llegada}°C > 8.0°C)"
+                    elif temp_llegada is not None and not 2.0 <= temp_llegada <= 8.0:
+                        causa = f"Excursión Térmica ({temp_llegada}°C fuera de 2.0°C a 8.0°C)"
                     elif incidencia:
                         causa = incidencia.tipo
 
                     registros.append({
                         "muestra_codigo": m.codigo_etiqueta,
-                        "paciente_nombre": pet.name if pet else "Luna",
-                        "especie": pet.species if pet else "Canino",
-                        "tutor_nombre": resp.full_name if resp else "María Cecilia González",
-                        "tipo_analisis": orden.detalles[0].tipo_analisis.nombre if (orden and orden.detalles) else "Hemograma",
-                        "transportista": envio.transportista or "Transportes BioLog (Roberto Gómez)",
+                        "paciente_nombre": pet.name if pet else "Sin dato",
+                        "especie": pet.species if pet else "Sin dato",
+                        "tutor_nombre": resp.full_name if resp else "Sin dato",
+                        "tipo_analisis": orden.detalles[0].tipo_analisis.nombre if (orden and orden.detalles) else "Sin dato",
+                        "transportista": envio.transportista or "Sin dato",
                         "remito_numero": envio.remito.numero if envio.remito else f"REM-{envio.id:04d}",
-                        "conservadora_codigo": "CON-01",
-                        "precinto_esperado": verif.codigo_esperado if verif else "PREC-48921",
-                        "precinto_observado": verif.codigo_observado if verif else "PREC-48921",
-                        "estado_precinto": estado_precinto if estado_precinto in {"Integro", "Roto", "Ausente"} else "Integro",
+                        "conservadora_codigo": envio.conservadora.codigo if envio.conservadora else "Sin dato",
+                        "precinto_esperado": verif.codigo_esperado if verif else "Sin dato",
+                        "precinto_observado": verif.codigo_observado if verif else "Sin dato",
+                        "estado_precinto": estado_precinto if estado_precinto in {"Integro", "Roto", "Ausente"} else "Sin dato",
                         "temperatura_salida_c": temp_salida,
                         "temperatura_llegada_c": temp_llegada,
-                        "temperatura_conforme": temp_llegada <= 8.0,
+                        "temperatura_conforme": 2.0 <= temp_llegada <= 8.0 if temp_llegada is not None else None,
                         "rango_admitido": "2.0°C a 8.0°C",
-                        "estado_muestra": "Rechazada" if es_rechazada else "Aceptada",
+                        "estado_muestra": "Rechazada" if es_rechazada else "Aceptada" if verif or m.estado in {"recibida", "analizada"} else "Sin verificar",
                         "causa_rechazo": causa,
-                        "fecha_evento": envio.fecha_despacho.strftime("%Y-%m-%d %H:%M") if envio.fecha_despacho else "2026-11-09 11:30",
-                        "accion_correctiva": "Muestra descartada por protocolo de bioseguridad; re-extracción solicitada" if es_rechazada else "Muestra ingresada a laboratorio conforme",
+                        "fecha_evento": envio.fecha_despacho.strftime("%Y-%m-%d %H:%M") if envio.fecha_despacho else "Sin dato",
+                        "accion_correctiva": "Muestra descartada por protocolo de bioseguridad; re-extracción solicitada" if es_rechazada else "Sin acción correctiva registrada" if not verif else "Muestra recibida conforme",
                     })
         except Exception as err:
-            logger.warning("Fallo al consultar base de datos para Reporte 2 (%s); usando semillas", err)
-
-        if len(registros) < 8:
-            registros.extend(self._generar_dataset_demostrativo_rechazadas())
+            logger.warning("Fallo al consultar base de datos para Reporte 2 (%s)", err)
 
         return registros
-
-    def _generar_dataset_demostrativo_rechazadas(self) -> list[dict[str, Any]]:
-        """Casos de prueba representativos con rechazos por bioseguridad, frío y precintos."""
-        return [
-            {
-                "muestra_codigo": "MUE-9102",
-                "paciente_nombre": "Luna",
-                "especie": "Canino",
-                "tutor_nombre": "María Cecilia González",
-                "tipo_analisis": "Perfil Bioquímico Hepático",
-                "transportista": "Transportes BioLog (Roberto Gómez)",
-                "remito_numero": "REM-2026-012",
-                "conservadora_codigo": "CON-01",
-                "precinto_esperado": "PREC-48921",
-                "precinto_observado": "PREC-48921",
-                "estado_precinto": "Integro",
-                "temperatura_salida_c": 4.8,
-                "temperatura_llegada_c": 5.4,
-                "temperatura_conforme": True,
-                "rango_admitido": "2.0°C a 8.0°C",
-                "estado_muestra": "Aceptada",
-                "causa_rechazo": None,
-                "fecha_evento": "2026-11-09 14:45",
-                "accion_correctiva": "Muestra ingresada a laboratorio conforme",
-            },
-            {
-                "muestra_codigo": "MUE-8841",
-                "paciente_nombre": "Milo",
-                "especie": "Felino",
-                "tutor_nombre": "Carlos Eduardo Benítez",
-                "tipo_analisis": "Orina Completa y Sedimento",
-                "transportista": "Envío Express Vet (Marcos Díaz)",
-                "remito_numero": "REM-2026-009",
-                "conservadora_codigo": "CON-03",
-                "precinto_esperado": "PREC-31092",
-                "precinto_observado": "PREC-31092",
-                "estado_precinto": "Integro",
-                "temperatura_salida_c": 5.0,
-                "temperatura_llegada_c": 11.4,
-                "temperatura_conforme": False,
-                "estado_muestra": "Rechazada",
-                "causa_rechazo": "Excursión Térmica (>8°C)",
-                "rango_admitido": "2.0°C a 8.0°C",
-                "fecha_evento": "2026-11-08 12:15",
-                "accion_correctiva": "Descarte por proliferación bacteriana térmica; se citó a Milo para re-extracción",
-            },
-            {
-                "muestra_codigo": "MUE-7622",
-                "paciente_nombre": "Thor",
-                "especie": "Canino",
-                "tutor_nombre": "Lucía Mariana Velez",
-                "tipo_analisis": "Citología Cutánea / PAAF",
-                "transportista": "Logística Sanitaria Sur (Andrés Paz)",
-                "remito_numero": "REM-2026-005",
-                "conservadora_codigo": "CON-02",
-                "precinto_esperado": "PREC-77140",
-                "precinto_observado": "Roto / Violado",
-                "estado_precinto": "Roto",
-                "temperatura_salida_c": 3.8,
-                "temperatura_llegada_c": 4.2,
-                "temperatura_conforme": True,
-                "estado_muestra": "Rechazada",
-                "causa_rechazo": "Rotura o Violación de Precinto",
-                "rango_admitido": "2.0°C a 8.0°C",
-                "fecha_evento": "2026-11-06 18:30",
-                "accion_correctiva": "Cadena de custodia invalidada; se levantó sumario al transportista y se repitió PAAF",
-            },
-            {
-                "muestra_codigo": "MUE-7510",
-                "paciente_nombre": "Simón",
-                "especie": "Felino",
-                "tutor_nombre": "Fernando G. Rossi",
-                "tipo_analisis": "Dosaje Hormonal (T4 / Cortisol)",
-                "transportista": "Transportes BioLog (Roberto Gómez)",
-                "remito_numero": "REM-2026-004",
-                "conservadora_codigo": "CON-01",
-                "precinto_esperado": "PREC-64019",
-                "precinto_observado": "PREC-64019",
-                "estado_precinto": "Integro",
-                "temperatura_salida_c": 3.5,
-                "temperatura_llegada_c": 4.1,
-                "temperatura_conforme": True,
-                "rango_admitido": "2.0°C a 8.0°C",
-                "estado_muestra": "Aceptada",
-                "causa_rechazo": None,
-                "fecha_evento": "2026-11-05 13:40",
-                "accion_correctiva": "Muestra ingresada a laboratorio conforme",
-            },
-            {
-                "muestra_codigo": "MUE-6901",
-                "paciente_nombre": "Kira",
-                "especie": "Canino",
-                "tutor_nombre": "Valeria S. Morales",
-                "tipo_analisis": "Hemograma Completo",
-                "transportista": "Envío Express Vet (Marcos Díaz)",
-                "remito_numero": "REM-2026-002",
-                "conservadora_codigo": "CON-03",
-                "precinto_esperado": "PREC-55091",
-                "precinto_observado": "PREC-99120",
-                "estado_precinto": "CodigoNoCoincide",
-                "temperatura_salida_c": 4.0,
-                "temperatura_llegada_c": 4.8,
-                "temperatura_conforme": True,
-                "estado_muestra": "Rechazada",
-                "causa_rechazo": "Código de Precinto No Coincide",
-                "rango_admitido": "2.0°C a 8.0°C",
-                "fecha_evento": "2026-11-03 14:15",
-                "accion_correctiva": "Discrepancia en remito; no se garantiza trazabilidad; muestra rechazada",
-            },
-            {
-                "muestra_codigo": "MUE-6415",
-                "paciente_nombre": "Boby",
-                "especie": "Canino",
-                "tutor_nombre": "Ignacio R. Herrera",
-                "tipo_analisis": "Coproparasitológico Seriado",
-                "transportista": "Logística Sanitaria Sur (Andrés Paz)",
-                "remito_numero": "REM-2026-001",
-                "conservadora_codigo": "CON-02",
-                "precinto_esperado": "PREC-41209",
-                "precinto_observado": "PREC-41209",
-                "estado_precinto": "Integro",
-                "temperatura_salida_c": 18.0,
-                "temperatura_llegada_c": 19.5,
-                "temperatura_conforme": True,
-                "rango_admitido": "15.0°C a 25.0°C",
-                "estado_muestra": "Aceptada",
-                "causa_rechazo": None,
-                "fecha_evento": "2026-11-01 16:00",
-                "accion_correctiva": "Muestra ingresada a laboratorio conforme",
-            },
-            {
-                "muestra_codigo": "MUE-5910",
-                "paciente_nombre": "Oreo",
-                "especie": "Felino",
-                "tutor_nombre": "Romina T. Suárez",
-                "tipo_analisis": "Sangre con EDTA",
-                "transportista": "Envío Express Vet (Marcos Díaz)",
-                "remito_numero": "REM-2026-003",
-                "conservadora_codigo": "CON-03",
-                "precinto_esperado": "PREC-51882",
-                "precinto_observado": "PREC-51882",
-                "estado_precinto": "Integro",
-                "temperatura_salida_c": 4.2,
-                "temperatura_llegada_c": 5.0,
-                "temperatura_conforme": True,
-                "estado_muestra": "Rechazada",
-                "causa_rechazo": "Muestra Insuficiente / Hemolizada",
-                "rango_admitido": "2.0°C a 8.0°C",
-                "fecha_evento": "2026-10-29 11:10",
-                "accion_correctiva": "Volumen menor a 0.5ml con presencia de coágulo; rechazada por imposibilidad técnica",
-            },
-            {
-                "muestra_codigo": "MUE-5801",
-                "paciente_nombre": "Rocky",
-                "especie": "Canino",
-                "tutor_nombre": "Esteban M. Ríos",
-                "tipo_analisis": "Perfil Renal (Urea y Creatinina)",
-                "transportista": "Transportes BioLog (Roberto Gómez)",
-                "remito_numero": "REM-2026-006",
-                "conservadora_codigo": "CON-01",
-                "precinto_esperado": "PREC-88902",
-                "precinto_observado": "PREC-88902",
-                "estado_precinto": "Integro",
-                "temperatura_salida_c": 4.1,
-                "temperatura_llegada_c": 4.6,
-                "temperatura_conforme": True,
-                "rango_admitido": "2.0°C a 8.0°C",
-                "estado_muestra": "Aceptada",
-                "causa_rechazo": None,
-                "fecha_evento": "2026-10-27 15:30",
-                "accion_correctiva": "Muestra ingresada a laboratorio conforme",
-            },
-        ]
 
     def exportar_excel_muestras_rechazadas(self, datos: dict[str, Any]) -> bytes:
         """Exporta el Reporte 2 de auditoría sanitaria a un libro Excel (.xlsx)."""

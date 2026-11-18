@@ -267,6 +267,39 @@ def test_us09_asociar_muestra_a_multiples_analisis(client, datos_prueba):
     assert len(res_pendientes.json()) == 0
 
 
+def test_us09_rechaza_asociar_muestra_ya_enviada(client, datos_prueba):
+    from app.models.orden_analisis import Muestra
+    from test.conftest import TestingSessionLocal
+
+    orden_res = client.post("/api/v1/ordenes-analisis", json={
+        "consulta_id": datos_prueba["consulta_id"],
+        "detalles": [{"tipo_analisis_id": datos_prueba["tipo_analisis_id"]}],
+    })
+    orden_id = orden_res.json()["id"]
+    detalle_id = orden_res.json()["detalles"][0]["id"]
+    muestra_res = client.post("/api/v1/muestras", json={
+        "codigo_etiqueta": "TUBO-ENVIADO-01",
+        "orden_id": orden_id,
+        "tipo_muestra_id": datos_prueba["tipo_muestra_id"],
+        "responsable_extraccion": "Dra. Lopez",
+    })
+    muestra_id = muestra_res.json()["id"]
+
+    db = TestingSessionLocal()
+    try:
+        db.get(Muestra, muestra_id).estado = "enviada"
+        db.commit()
+    finally:
+        db.close()
+
+    asociacion = client.post(f"/api/v1/ordenes-analisis/{orden_id}/asociar-muestra", json={
+        "muestra_id": muestra_id,
+        "detalle_ids": [detalle_id],
+    })
+    assert asociacion.status_code == 409
+    assert "no fueron empaquetadas ni enviadas" in asociacion.json()["detail"]
+
+
 def test_us09_validar_incompatibilidad_tipo_muestra(client, datos_prueba):
     """US-09: No permite asociar una muestra biológica incompatible con el análisis solicitado."""
     # 1. Configurar que el tipo de análisis (Hemograma) solo acepta Sangre con EDTA

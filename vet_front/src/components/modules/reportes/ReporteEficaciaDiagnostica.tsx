@@ -302,8 +302,8 @@ export const ReporteEficaciaDiagnostica: React.FC = () => {
         />
         <KpiCard
           titulo="Concordancia Médica"
-          valor={reporte4Data ? `${reporte4Data.kpis.tasa_concordancia_diagnostica}%` : '-'}
-          subtexto="Confirmación presuntiva"
+          valor={reporte4Data?.kpis.tasa_concordancia_diagnostica == null ? 'No disponible' : `${reporte4Data.kpis.tasa_concordancia_diagnostica}%`}
+          subtexto="Falta registrar el diagnóstico final veterinario"
           icono={CheckCircle2}
           colorIcono="text-emerald-500"
           colorValor="text-emerald-700"

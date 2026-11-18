@@ -489,8 +489,8 @@ export const ReporteMuestrasRechazadas: React.FC = () => {
                         </span>
                       </td>
                       <td className="py-2.5 px-3 font-mono">
-                        <span className={`font-semibold ${d.temperatura_conforme ? 'text-emerald-700' : 'text-rose-700 font-bold'}`}>
-                          {d.temperatura_llegada_c}°C
+                        <span className={`font-semibold ${d.temperatura_conforme == null ? 'text-neutral-500' : d.temperatura_conforme ? 'text-emerald-700' : 'text-rose-700 font-bold'}`}>
+                          {d.temperatura_llegada_c == null ? 'Sin dato' : `${d.temperatura_llegada_c}°C`}
                         </span>
                         <span className="text-[10px] text-neutral-400 block">{d.rango_admitido}</span>
                       </td>
@@ -500,7 +500,7 @@ export const ReporteMuestrasRechazadas: React.FC = () => {
                             ? 'bg-rose-100 text-rose-800 border border-rose-200'
                             : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                         }`}>
-                          {esRechazada ? <AlertTriangle className="w-3 h-3 text-rose-600" /> : <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
+                          {esRechazada ? <AlertTriangle className="w-3 h-3 text-rose-600" /> : d.estado_muestra === 'Aceptada' ? <CheckCircle2 className="w-3 h-3 text-emerald-600" /> : null}
                           {d.estado_muestra}
                         </span>
                       </td>

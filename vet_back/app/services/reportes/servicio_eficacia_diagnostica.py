@@ -62,12 +62,14 @@ class ServicioEficaciaDiagnostica:
             detalles = [d for d in detalles if d["tipo_analisis"].strip().lower() == tipo_analisis_filtro.strip().lower()]
 
         total_estudios = len(detalles)
-        hallazgos_criticos = sum(1 for d in detalles if d["estado_diagnostico"] == "Hallazgo Patológico")
-        fisiologicos_normales = sum(1 for d in detalles if d["estado_diagnostico"] == "Fisiológico Normal")
-        concordantes = sum(1 for d in detalles if d["concordancia"] == "Confirmado")
+        estudios_evaluables = [d for d in detalles if d["estado_diagnostico"] != "Sin datos interpretables"]
+        hallazgos_criticos = sum(1 for d in estudios_evaluables if d["estado_diagnostico"] == "Hallazgo Patológico")
+        fisiologicos_normales = sum(1 for d in estudios_evaluables if d["estado_diagnostico"] == "Fisiológico Normal")
 
-        tasa_positividad = round((hallazgos_criticos / total_estudios) * 100, 1) if total_estudios > 0 else 0.0
-        tasa_concordancia = round((concordantes / total_estudios) * 100, 1) if total_estudios > 0 else 0.0
+        tasa_positividad = round((hallazgos_criticos / len(estudios_evaluables)) * 100, 1) if estudios_evaluables else 0.0
+        # El modelo no registra una conclusión veterinaria posterior con la que
+        # comparar el diagnóstico presuntivo; por ahora esta métrica no es calculable.
+        tasa_concordancia = None
         especies_unicas = len({d["especie"] for d in detalles})
 
         # Desglose por Especie
@@ -79,8 +81,9 @@ class ServicioEficaciaDiagnostica:
         for esp, items in por_especie.items():
             tot_esp = len(items)
             pat_esp = sum(1 for i in items if i["estado_diagnostico"] == "Hallazgo Patológico")
-            norm_esp = tot_esp - pat_esp
-            pct_pos = round((pat_esp / tot_esp) * 100, 1) if tot_esp > 0 else 0.0
+            evaluables = [i for i in items if i["estado_diagnostico"] != "Sin datos interpretables"]
+            norm_esp = sum(1 for i in evaluables if i["estado_diagnostico"] == "Fisiológico Normal")
+            pct_pos = round((pat_esp / len(evaluables)) * 100, 1) if evaluables else 0.0
 
             # Patología predominante
             analitos_alterados: list[str] = []
@@ -104,14 +107,15 @@ class ServicioEficaciaDiagnostica:
         for d in detalles:
             por_etario.setdefault(d["grupo_etario"], []).append(d)
 
-        orden_etario = ["Cachorro / Joven", "Adulto", "Geriátrico"]
+        orden_etario = ["Cachorro / Joven", "Adulto", "Geriátrico", "Sin dato"]
         desglose_etario = []
         for grp in orden_etario:
             items_grp = por_etario.get(grp, [])
             tot_g = len(items_grp)
             pat_g = sum(1 for i in items_grp if i["estado_diagnostico"] == "Hallazgo Patológico")
-            norm_g = tot_g - pat_g
-            pct_g = round((pat_g / tot_g) * 100, 1) if tot_g > 0 else 0.0
+            evaluables = [i for i in items_grp if i["estado_diagnostico"] != "Sin datos interpretables"]
+            norm_g = sum(1 for i in evaluables if i["estado_diagnostico"] == "Fisiológico Normal")
+            pct_g = round((pat_g / len(evaluables)) * 100, 1) if evaluables else 0.0
             desglose_etario.append({
                 "grupo_etario": grp,
                 "total_estudios": tot_g,
@@ -177,6 +181,7 @@ class ServicioEficaciaDiagnostica:
             "fecha_generacion": fecha_hora_argentina_str(),
             "kpis": {
                 "total_estudios_procesados": total_estudios,
+                "total_estudios_evaluables": len(estudios_evaluables),
                 "total_con_hallazgos_criticos": hallazgos_criticos,
                 "total_fisiologicos_normales": fisiologicos_normales,
                 "tasa_positividad_porcentaje": tasa_positividad,
@@ -216,21 +221,23 @@ class ServicioEficaciaDiagnostica:
                 vet = orden.veterinario if orden else (consulta.veterinarian if consulta else None)
 
                 # Calcular edad y grupo etario
-                edad_anios = 4
+                edad_anios = None
                 if pet and pet.birth_date:
                     hoy = datetime.now().date()
                     edad_anios = max(0, hoy.year - pet.birth_date.year)
 
-                if edad_anios < 1:
+                if edad_anios is None:
+                    grupo_etario = "Sin dato"
+                elif edad_anios < 1:
                     grupo_etario = "Cachorro / Joven"
                 elif edad_anios <= 7:
                     grupo_etario = "Adulto"
                 else:
                     grupo_etario = "Geriátrico"
 
-                tipo_estudio = "Análisis Clínico General"
+                tipo_estudio = "Sin dato"
                 if orden and orden.detalles:
-                    tipo_estudio = orden.detalles[0].tipo_analisis.nombre if orden.detalles[0].tipo_analisis else "Análisis General"
+                    tipo_estudio = orden.detalles[0].tipo_analisis.nombre if orden.detalles[0].tipo_analisis else "Sin dato"
 
                 # Interpretar datos de laboratorio
                 datos = r.datos or {}
@@ -238,15 +245,16 @@ class ServicioEficaciaDiagnostica:
                 conclusion = datos.get("conclusionDiagnostica", r.interpretacion_clinica or "Sin conclusión registrada")
 
                 alertas = [v for v in valores if isinstance(v, dict) and v.get("alerta") in {"Alto", "Bajo", "Crítico"}]
+                tiene_datos_interpretables = bool(valores)
                 tiene_patologia = len(alertas) > 0
 
-                severidad = "Normal"
+                severidad = "Sin dato" if not tiene_datos_interpretables else "Normal"
                 if tiene_patologia:
                     tiene_critico = any(v.get("alerta") == "Crítico" or "Glóbulos blancos" in v.get("parametro", "") for v in alertas)
                     severidad = "Crítico" if tiene_critico else "Moderado"
 
-                diag_presuntivo = consulta.diagnosis if consulta and consulta.diagnosis else "Control clínico"
-                concordancia = "Confirmado" if tiene_patologia else "Fisiológico Normal"
+                diag_presuntivo = consulta.diagnosis if consulta and consulta.diagnosis else "Sin dato"
+                concordancia = "No evaluable"
 
                 resumen_params = []
                 params_alterados = []
@@ -262,379 +270,30 @@ class ServicioEficaciaDiagnostica:
 
                 registros.append({
                     "resultado_id": f"RES-{r.id[:8]}",
-                    "orden_codigo": f"ORD-{orden.id:04d}" if orden else "ORD-0001",
-                    "fecha_emision": r.fecha_recepcion.strftime("%Y-%m-%d %H:%M") if r.fecha_recepcion else "2026-11-10 12:00",
-                    "paciente_nombre": pet.name if pet else "Paciente",
-                    "especie": pet.species if pet else "Canino",
-                    "raza": pet.breed if pet else "Mestizo",
+                    "orden_codigo": f"ORD-{orden.id:04d}" if orden else "Sin dato",
+                    "fecha_emision": r.fecha_recepcion.strftime("%Y-%m-%d %H:%M") if r.fecha_recepcion else "Sin dato",
+                    "paciente_nombre": pet.name if pet else "Sin dato",
+                    "especie": pet.species if pet else "Sin dato",
+                    "raza": pet.breed if pet and pet.breed else "Sin dato",
                     "edad_anios": edad_anios,
                     "grupo_etario": grupo_etario,
-                    "tutor_nombre": tutor.full_name if tutor else "Tutor Responsable",
-                    "veterinario_nombre": vet.full_name if vet else "Veterinario de Guardia",
-                    "motivo_consulta": consulta.reason if consulta else "Control periódico",
+                    "tutor_nombre": tutor.full_name if tutor else "Sin dato",
+                    "veterinario_nombre": vet.full_name if vet else "Sin dato",
+                    "motivo_consulta": consulta.reason if consulta else "Sin dato",
                     "diagnostico_presuntivo": diag_presuntivo,
                     "tipo_analisis": tipo_estudio,
-                    "parametros_resumen": "; ".join(resumen_params) if resumen_params else "Todos los parámetros dentro de rango",
+                    "parametros_resumen": "; ".join(resumen_params) if resumen_params else "Sin parámetros interpretables" if not tiene_datos_interpretables else "Todos los parámetros dentro de rango",
                     "parametros_alterados": params_alterados,
                     "lista_parametros_alerta": alertas,
-                    "estado_diagnostico": "Hallazgo Patológico" if tiene_patologia else "Fisiológico Normal",
+                    "estado_diagnostico": "Hallazgo Patológico" if tiene_patologia else "Fisiológico Normal" if tiene_datos_interpretables else "Sin datos interpretables",
                     "severidad": severidad,
                     "concordancia": concordancia,
                     "conclusion_laboratorio": conclusion,
                 })
         except Exception as err:
-            logger.warning("Fallo al consultar base de datos para Reporte 4 (%s); usando semillas", err)
-
-        if len(registros) < 8:
-            registros.extend(self._generar_dataset_demostrativo_eficacia())
+            logger.warning("Fallo al consultar base de datos para Reporte 4 (%s)", err)
 
         return registros
-
-    def _generar_dataset_demostrativo_eficacia(self) -> list[dict[str, Any]]:
-        """Dataset clínico enriquecido para análisis epidemiológico y demostraciones."""
-        return [
-            {
-                "resultado_id": "RES-001",
-                "orden_codigo": "ORD-2026-081",
-                "fecha_emision": "2026-11-12 14:30",
-                "paciente_nombre": "Thor",
-                "especie": "Canino",
-                "raza": "Ovejero Alemán",
-                "edad_anios": 5,
-                "grupo_etario": "Adulto",
-                "tutor_nombre": "Carlos Alberto Gómez",
-                "veterinario_nombre": "Dr. Lucas Ferrara",
-                "motivo_consulta": "Fiebre persistente de 39.8°C y dolor abdominal agudo",
-                "diagnostico_presuntivo": "Proceso infeccioso agudo / Gastroenteritis infecciosa",
-                "tipo_analisis": "Hemograma Completo",
-                "parametros_resumen": "Glóbulos blancos: 22.4 K/µL (Alto), Neutrófilos: 84% (Alto)",
-                "parametros_alterados": ["Glóbulos blancos", "Neutrófilos"],
-                "lista_parametros_alerta": [
-                    {"parametro": "Glóbulos blancos", "valor": "22.4", "unidad": "K/µL", "rangoReferencia": "6.0–17.0", "alerta": "Alto"},
-                    {"parametro": "Neutrófilos", "valor": "84", "unidad": "%", "rangoReferencia": "60–77", "alerta": "Alto"},
-                ],
-                "estado_diagnostico": "Hallazgo Patológico",
-                "severidad": "Crítico",
-                "concordancia": "Confirmado",
-                "conclusion_laboratorio": "Leucocitosis marcada con neutrofilia absoluta y desviación a la izquierda. Sugiere infección bacteriana activa.",
-            },
-            {
-                "resultado_id": "RES-002",
-                "orden_codigo": "ORD-2026-083",
-                "fecha_emision": "2026-11-12 16:15",
-                "paciente_nombre": "Simón",
-                "especie": "Felino",
-                "raza": "Siamés",
-                "edad_anios": 11,
-                "grupo_etario": "Geriátrico",
-                "tutor_nombre": "Fernando G. Rossi",
-                "veterinario_nombre": "Dra. Sofía Martínez",
-                "motivo_consulta": "Polidipsia, poliuria y pérdida de peso progresiva",
-                "diagnostico_presuntivo": "Enfermedad Renal Crónica felina (ERC)",
-                "tipo_analisis": "Perfil Renal (Urea y Creatinina)",
-                "parametros_resumen": "Creatinina: 2.8 mg/dL (Alto), Urea: 92 mg/dL (Alto)",
-                "parametros_alterados": ["Creatinina", "Urea"],
-                "lista_parametros_alerta": [
-                    {"parametro": "Creatinina", "valor": "2.8", "unidad": "mg/dL", "rangoReferencia": "0.6–1.6", "alerta": "Alto"},
-                    {"parametro": "Urea", "valor": "92", "unidad": "mg/dL", "rangoReferencia": "20–60", "alerta": "Alto"},
-                ],
-                "estado_diagnostico": "Hallazgo Patológico",
-                "severidad": "Crítico",
-                "concordancia": "Confirmado",
-                "conclusion_laboratorio": "Azoemia renal moderada a avanzada compatible con estadio IRIS 3. Requiere fluidoterapia y dieta renal.",
-            },
-            {
-                "resultado_id": "RES-003",
-                "orden_codigo": "ORD-2026-084",
-                "fecha_emision": "2026-11-11 11:20",
-                "paciente_nombre": "Kira",
-                "especie": "Canino",
-                "raza": "Caniche Toy",
-                "edad_anios": 7,
-                "grupo_etario": "Adulto",
-                "tutor_nombre": "Valeria S. Morales",
-                "veterinario_nombre": "Dr. Martín Gómez",
-                "motivo_consulta": "Chequeo prequirúrgico para exéresis de nódulo mamario",
-                "diagnostico_presuntivo": "Aptitud quirúrgica / Sin sintomatología sistémica",
-                "tipo_analisis": "Perfil Bioquímico Hepático",
-                "parametros_resumen": "Todos los parámetros dentro de rango",
-                "parametros_alterados": [],
-                "lista_parametros_alerta": [],
-                "estado_diagnostico": "Fisiológico Normal",
-                "severidad": "Normal",
-                "concordancia": "Confirmado",
-                "conclusion_laboratorio": "ALT, AST y Fosfatasa Alcalina en rangos fisiológicos. Paciente apto para procedimiento anestésico.",
-            },
-            {
-                "resultado_id": "RES-004",
-                "orden_codigo": "ORD-2026-085",
-                "fecha_emision": "2026-11-11 17:40",
-                "paciente_nombre": "Milo",
-                "especie": "Felino",
-                "raza": "Común Europeo",
-                "edad_anios": 4,
-                "grupo_etario": "Adulto",
-                "tutor_nombre": "Andrea P. Benítez",
-                "veterinario_nombre": "Dra. Sofía Martínez",
-                "motivo_consulta": "Disuria, estranguria y hematuria visible en litera",
-                "diagnostico_presuntivo": "Cistitis idiopática felina / Urolitiasis",
-                "tipo_analisis": "Orina Completa y Sedimento",
-                "parametros_resumen": "Eritrocitos: Abundantes (Alto), Cristales Estruvita: +++ (Alto), pH: 8.2 (Alto)",
-                "parametros_alterados": ["Eritrocitos", "Cristales Estruvita", "pH Urinario"],
-                "lista_parametros_alerta": [
-                    {"parametro": "Eritrocitos", "valor": ">50 / campo", "unidad": "campo", "rangoReferencia": "0–3", "alerta": "Alto"},
-                    {"parametro": "Cristales Estruvita", "valor": "Abundantes (+++)", "unidad": "campo", "rangoReferencia": "Ausentes", "alerta": "Alto"},
-                    {"parametro": "pH Urinario", "valor": "8.2", "unidad": "pH", "rangoReferencia": "6.0–7.0", "alerta": "Alto"},
-                ],
-                "estado_diagnostico": "Hallazgo Patológico",
-                "severidad": "Moderado",
-                "concordancia": "Confirmado",
-                "conclusion_laboratorio": "Sedimento urinario inflamatorio con cristaluria de fosfato amónico magnésico (estruvita) y hematuria marcada.",
-            },
-            {
-                "resultado_id": "RES-005",
-                "orden_codigo": "ORD-2026-086",
-                "fecha_emision": "2026-11-10 10:10",
-                "paciente_nombre": "Lola",
-                "especie": "Canino",
-                "raza": "Golden Retriever",
-                "edad_anios": 9,
-                "grupo_etario": "Geriátrico",
-                "tutor_nombre": "Esteban D. Romero",
-                "veterinario_nombre": "Dr. Carlos Menéndez",
-                "motivo_consulta": "Poliuria, polidipsia y decaimiento postprandial",
-                "diagnostico_presuntivo": "Sospecha de Diabetes Mellitus canina",
-                "tipo_analisis": "Perfil Bioquímico Hepático",
-                "parametros_resumen": "Glucemia: 285 mg/dL (Alto), Fructosamina: 410 µmol/L (Alto), ALT: 145 U/L (Alto)",
-                "parametros_alterados": ["Glucemia", "Fructosamina", "ALT / GPT"],
-                "lista_parametros_alerta": [
-                    {"parametro": "Glucemia", "valor": "285", "unidad": "mg/dL", "rangoReferencia": "70–110", "alerta": "Alto"},
-                    {"parametro": "Fructosamina", "valor": "410", "unidad": "µmol/L", "rangoReferencia": "220–340", "alerta": "Alto"},
-                    {"parametro": "ALT / GPT", "valor": "145", "unidad": "U/L", "rangoReferencia": "10–100", "alerta": "Alto"},
-                ],
-                "estado_diagnostico": "Hallazgo Patológico",
-                "severidad": "Crítico",
-                "concordancia": "Confirmado",
-                "conclusion_laboratorio": "Hiperglucemia sostenida e incremento de enzimas hepáticas. Cuadro compatible con Diabetes Mellitus descompensada.",
-            },
-            {
-                "resultado_id": "RES-006",
-                "orden_codigo": "ORD-2026-087",
-                "fecha_emision": "2026-11-09 15:45",
-                "paciente_nombre": "Toby",
-                "especie": "Canino",
-                "raza": "Labrador Retriever",
-                "edad_anios": 0,
-                "grupo_etario": "Cachorro / Joven",
-                "tutor_nombre": "María Eugenia Paz",
-                "veterinario_nombre": "Dra. Sofía Martínez",
-                "motivo_consulta": "Deposiciones blandas intermitentes y falta de aumento de peso",
-                "diagnostico_presuntivo": "Parasitosis gastrointestinal / Giardiasis",
-                "tipo_analisis": "Coproparasitológico Seriado",
-                "parametros_resumen": "Quistes de Giardia lamblia: Positivo (Alto), Toxocara canis: Positivo (Alto)",
-                "parametros_alterados": ["Giardia lamblia", "Toxocara canis"],
-                "lista_parametros_alerta": [
-                    {"parametro": "Giardia lamblia", "valor": "Positivo (++ )", "unidad": "quistes", "rangoReferencia": "Negativo", "alerta": "Alto"},
-                    {"parametro": "Toxocara canis", "valor": "Positivo (+)", "unidad": "huevos", "rangoReferencia": "Negativo", "alerta": "Alto"},
-                ],
-                "estado_diagnostico": "Hallazgo Patológico",
-                "severidad": "Moderado",
-                "concordancia": "Confirmado",
-                "conclusion_laboratorio": "Poliparasitismo intestinal por protozoos (Giardia) y nematodos (Toxocara). Se indica fenbendazol y metronidazol.",
-            },
-            {
-                "resultado_id": "RES-007",
-                "orden_codigo": "ORD-2026-088",
-                "fecha_emision": "2026-11-08 12:00",
-                "paciente_nombre": "Mia",
-                "especie": "Felino",
-                "raza": "Persa",
-                "edad_anios": 6,
-                "grupo_etario": "Adulto",
-                "tutor_nombre": "Cecilia M. Álvarez",
-                "veterinario_nombre": "Dra. Sofía Martínez",
-                "motivo_consulta": "Control periódico semestral felino",
-                "diagnostico_presuntivo": "Evaluación preventiva de rutina",
-                "tipo_analisis": "Hemograma Completo",
-                "parametros_resumen": "Todos los parámetros dentro de rango",
-                "parametros_alterados": [],
-                "lista_parametros_alerta": [],
-                "estado_diagnostico": "Fisiológico Normal",
-                "severidad": "Normal",
-                "concordancia": "Confirmado",
-                "conclusion_laboratorio": "Serie roja y blanca sin particularidades. Frotis con morfología eritrocitaria normal. Plaquetas adecuadas.",
-            },
-            {
-                "resultado_id": "RES-008",
-                "orden_codigo": "ORD-2026-089",
-                "fecha_emision": "2026-11-07 18:30",
-                "paciente_nombre": "Rocco",
-                "especie": "Canino",
-                "raza": "Bulldog Francés",
-                "edad_anios": 2,
-                "grupo_etario": "Adulto",
-                "tutor_nombre": "Gonzalo H. Medina",
-                "veterinario_nombre": "Dr. Lucas Ferrara",
-                "motivo_consulta": "Prurito facial intenso, eritema interdigital y descamación",
-                "diagnostico_presuntivo": "Dermatitis atópica / Alergia alimentaria",
-                "tipo_analisis": "Citología Cutánea / PAAF",
-                "parametros_resumen": "Malassezia pachydermatis: Abundante (Alto), Neutrófilos degenerados: Presentes (Alto)",
-                "parametros_alterados": ["Malassezia pachydermatis", "Infiltrado inflamatorio"],
-                "lista_parametros_alerta": [
-                    {"parametro": "Malassezia pachydermatis", "valor": ">10 / campo 100x", "unidad": "campo", "rangoReferencia": "0–1", "alerta": "Alto"},
-                    {"parametro": "Infiltrado inflamatorio", "valor": "Moderado", "unidad": "campo", "rangoReferencia": "Leve", "alerta": "Alto"},
-                ],
-                "estado_diagnostico": "Hallazgo Patológico",
-                "severidad": "Moderado",
-                "concordancia": "Confirmado",
-                "conclusion_laboratorio": "Sobrecrecimiento fúngico por levaduras compatible con dermatitis por Malassezia secundaria a base atópica.",
-            },
-            {
-                "resultado_id": "RES-009",
-                "orden_codigo": "ORD-2026-090",
-                "fecha_emision": "2026-11-06 09:40",
-                "paciente_nombre": "Felix",
-                "especie": "Felino",
-                "raza": "Mestizo",
-                "edad_anios": 12,
-                "grupo_etario": "Geriátrico",
-                "tutor_nombre": "Patricia N. Vidal",
-                "veterinario_nombre": "Dr. Carlos Menéndez",
-                "motivo_consulta": "Alopecia simétrica no pruriginosa, agresividad y taquipnea",
-                "diagnostico_presuntivo": "Sospecha de Hipertiroidismo felino",
-                "tipo_analisis": "Dosaje Hormonal (T4 / Cortisol)",
-                "parametros_resumen": "T4 Total: 6.8 µg/dL (Alto), T4 Libre: 54 pmol/L (Alto)",
-                "parametros_alterados": ["T4 Total", "T4 Libre"],
-                "lista_parametros_alerta": [
-                    {"parametro": "T4 Total", "valor": "6.8", "unidad": "µg/dL", "rangoReferencia": "1.0–4.0", "alerta": "Alto"},
-                    {"parametro": "T4 Libre", "valor": "54", "unidad": "pmol/L", "rangoReferencia": "10–35", "alerta": "Alto"},
-                ],
-                "estado_diagnostico": "Hallazgo Patológico",
-                "severidad": "Crítico",
-                "concordancia": "Confirmado",
-                "conclusion_laboratorio": "Tiroxina total y libre francamente elevadas. Diagnóstico concluyente de Hipertiroidismo. Indicar metimazol y control ecocardiográfico.",
-            },
-            {
-                "resultado_id": "RES-010",
-                "orden_codigo": "ORD-2026-091",
-                "fecha_emision": "2026-11-05 13:15",
-                "paciente_nombre": "Boby",
-                "especie": "Canino",
-                "raza": "Beagle",
-                "edad_anios": 3,
-                "grupo_etario": "Adulto",
-                "tutor_nombre": "Ignacio R. Herrera",
-                "veterinario_nombre": "Dr. Martín Gómez",
-                "motivo_consulta": "Certificado sanitario para viaje interprovincial",
-                "diagnostico_presuntivo": "Aptitud sanitaria para transporte",
-                "tipo_analisis": "Hemograma Completo",
-                "parametros_resumen": "Todos los parámetros dentro de rango",
-                "parametros_alterados": [],
-                "lista_parametros_alerta": [],
-                "estado_diagnostico": "Fisiológico Normal",
-                "severidad": "Normal",
-                "concordancia": "Confirmado",
-                "conclusion_laboratorio": "Constantes hematológicas dentro de parámetros estándar para la especie. Paciente apto para certificación sanitaria.",
-            },
-            {
-                "resultado_id": "RES-011",
-                "orden_codigo": "ORD-2026-092",
-                "fecha_emision": "2026-11-04 11:30",
-                "paciente_nombre": "Relámpago",
-                "especie": "Equino",
-                "raza": "Pura Sangre de Carrera",
-                "edad_anios": 6,
-                "grupo_etario": "Adulto",
-                "tutor_nombre": "Haras San Jorge (Martín S. Ávalos)",
-                "veterinario_nombre": "Dr. Carlos Menéndez",
-                "motivo_consulta": "Sudoración profusa, dolor cólico intermitente y taquicardia sinusal",
-                "diagnostico_presuntivo": "Síndrome Abdominal Agudo (Cólico Equino)",
-                "tipo_analisis": "Perfil Bioquímico Hepático",
-                "parametros_resumen": "Lactato sérico: 4.8 mmol/L (Alto), Fibrinógeno: 620 mg/dL (Alto)",
-                "parametros_alterados": ["Lactato sérico", "Fibrinógeno"],
-                "lista_parametros_alerta": [
-                    {"parametro": "Lactato sérico", "valor": "4.8", "unidad": "mmol/L", "rangoReferencia": "0.5–2.0", "alerta": "Alto"},
-                    {"parametro": "Fibrinógeno", "valor": "620", "unidad": "mg/dL", "rangoReferencia": "200–400", "alerta": "Alto"},
-                ],
-                "estado_diagnostico": "Hallazgo Patológico",
-                "severidad": "Crítico",
-                "concordancia": "Confirmado",
-                "conclusion_laboratorio": "Hiperlactatemia severa y reacción inflamatoria de fase aguda. Sugiere compromiso isquémico intestinal; amerita laparotomía exploratoria inmediata.",
-            },
-            {
-                "resultado_id": "RES-012",
-                "orden_codigo": "ORD-2026-093",
-                "fecha_emision": "2026-11-03 16:40",
-                "paciente_nombre": "Copito",
-                "especie": "Conejo",
-                "raza": "Cabeza de León",
-                "edad_anios": 3,
-                "grupo_etario": "Adulto",
-                "tutor_nombre": "Camila N. Suárez",
-                "veterinario_nombre": "Dra. Sofía Martínez",
-                "motivo_consulta": "Anorexia de 24 hs, letargia y ausencia de cecotrofos",
-                "diagnostico_presuntivo": "Estasis gastrointestinal del lagomorfo / Lipidosis hepática",
-                "tipo_analisis": "Perfil Bioquímico Hepático",
-                "parametros_resumen": "ALT: 89 U/L (Alto), Fosfatasa Alcalina: 185 U/L (Alto), Glucemia: 198 mg/dL (Alto)",
-                "parametros_alterados": ["ALT", "Fosfatasa Alcalina", "Glucemia"],
-                "lista_parametros_alerta": [
-                    {"parametro": "ALT", "valor": "89", "unidad": "U/L", "rangoReferencia": "15–50", "alerta": "Alto"},
-                    {"parametro": "Fosfatasa Alcalina", "valor": "185", "unidad": "U/L", "rangoReferencia": "40–120", "alerta": "Alto"},
-                    {"parametro": "Glucemia", "valor": "198", "unidad": "mg/dL", "rangoReferencia": "75–140", "alerta": "Alto"},
-                ],
-                "estado_diagnostico": "Hallazgo Patológico",
-                "severidad": "Moderado",
-                "concordancia": "Confirmado",
-                "conclusion_laboratorio": "Hiperglucemia por estrés metabólico e incremento enzimático compatible con estasis gastrointestinal incipiente. Iniciar motilidad asistida y soporte nutricional.",
-            },
-            {
-                "resultado_id": "RES-013",
-                "orden_codigo": "ORD-2026-094",
-                "fecha_emision": "2026-11-02 10:20",
-                "paciente_nombre": "Tornado",
-                "especie": "Equino",
-                "raza": "Criollo",
-                "edad_anios": 5,
-                "grupo_etario": "Adulto",
-                "tutor_nombre": "Estancia La Candelaria (Pablo E. Ruiz)",
-                "veterinario_nombre": "Dr. Carlos Menéndez",
-                "motivo_consulta": "Examen precompra y aptitud deportiva",
-                "diagnostico_presuntivo": "Evaluación sanitaria de rutina precompra",
-                "tipo_analisis": "Hemograma Completo",
-                "parametros_resumen": "Todos los parámetros dentro de rango",
-                "parametros_alterados": [],
-                "lista_parametros_alerta": [],
-                "estado_diagnostico": "Fisiológico Normal",
-                "severidad": "Normal",
-                "concordancia": "Confirmado",
-                "conclusion_laboratorio": "Constantes eritrocitarias y fórmula leucocitaria dentro de parámetros fisiológicos estándar para la especie equina. Apto deportivo.",
-            },
-            {
-                "resultado_id": "RES-014",
-                "orden_codigo": "ORD-2026-095",
-                "fecha_emision": "2026-11-01 15:10",
-                "paciente_nombre": "Paco",
-                "especie": "Ave",
-                "raza": "Loro Hablador (Amazona aestiva)",
-                "edad_anios": 14,
-                "grupo_etario": "Geriátrico",
-                "tutor_nombre": "Raúl E. Domínguez",
-                "veterinario_nombre": "Dr. Lucas Ferrara",
-                "motivo_consulta": "Descarga nasal serosa, letargia y plumaje erizado",
-                "diagnostico_presuntivo": "Infección respiratoria alta / Clamidiosis aviar",
-                "tipo_analisis": "Hemograma Completo",
-                "parametros_resumen": "Heterófilos: 26.0 K/µL (Alto), AST: 340 U/L (Alto)",
-                "parametros_alterados": ["Heterófilos", "AST"],
-                "lista_parametros_alerta": [
-                    {"parametro": "Heterófilos", "valor": "26.0", "unidad": "K/µL", "rangoReferencia": "4.0–12.0", "alerta": "Alto"},
-                    {"parametro": "AST", "valor": "340", "unidad": "U/L", "rangoReferencia": "50–200", "alerta": "Alto"},
-                ],
-                "estado_diagnostico": "Hallazgo Patológico",
-                "severidad": "Moderado",
-                "concordancia": "Confirmado",
-                "conclusion_laboratorio": "Heterofilia marcada con elevación de transaminasas. Cuadro compatible con infección bacteriana sistémica aviar.",
-            },
-        ]
 
     def exportar_excel_eficacia_diagnostica(self, datos: dict[str, Any]) -> bytes:
         """Genera el libro Excel profesional (.xlsx) con 2 hojas y logotipo oficial."""

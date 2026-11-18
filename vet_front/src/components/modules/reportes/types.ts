@@ -46,12 +46,12 @@ export interface DetalleMuestraReporte {
   fecha_despacho: string;
   fecha_recepcion_lab: string;
   fecha_resultado: string;
-  tiempo_transito_horas: number;
-  tiempo_procesamiento_horas: number;
-  tiempo_total_horas: number;
+  tiempo_transito_horas: number | null;
+  tiempo_procesamiento_horas: number | null;
+  tiempo_total_horas: number | null;
   sla_objetivo_horas: number;
-  diferencia_sla_horas: number;
-  cumple_sla: boolean;
+  diferencia_sla_horas: number | null;
+  cumple_sla: boolean | null;
   estado_analisis: string;
 }
 
@@ -115,12 +115,12 @@ export interface DetalleMuestraRechazada {
   conservadora_codigo: string;
   precinto_esperado: string;
   precinto_observado: string;
-  estado_precinto: 'Integro' | 'Roto' | 'Ausente';
-  temperatura_salida_c: number;
-  temperatura_llegada_c: number;
-  temperatura_conforme: boolean;
+  estado_precinto: 'Integro' | 'Roto' | 'Ausente' | 'Otra anomalía' | 'Sin dato';
+  temperatura_salida_c: number | null;
+  temperatura_llegada_c: number | null;
+  temperatura_conforme: boolean | null;
   rango_admitido: string;
-  estado_muestra: 'Rechazada' | 'Aceptada';
+  estado_muestra: 'Rechazada' | 'Aceptada' | 'Sin verificar';
   causa_rechazo: string | null;
   fecha_evento: string;
   accion_correctiva: string;
@@ -226,10 +226,11 @@ export interface ReporteRendimientoClinicoResponse {
 
 export interface KpiEficaciaData {
   total_estudios_procesados: number;
+  total_estudios_evaluables: number;
   total_con_hallazgos_criticos: number;
   total_fisiologicos_normales: number;
   tasa_positividad_porcentaje: number;
-  tasa_concordancia_diagnostica: number;
+  tasa_concordancia_diagnostica: number | null;
   total_especies_auditadas: number;
 }
 
@@ -279,7 +280,7 @@ export interface DetalleDiagnostico {
   paciente_nombre: string;
   especie: string;
   raza: string;
-  edad_anios: number;
+  edad_anios: number | null;
   grupo_etario: string;
   tutor_nombre: string;
   veterinario_nombre: string;
@@ -289,8 +290,8 @@ export interface DetalleDiagnostico {
   parametros_resumen: string;
   parametros_alterados: string[];
   lista_parametros_alerta: ParametroAlerta[];
-  estado_diagnostico: 'Hallazgo Patológico' | 'Fisiológico Normal';
-  severidad: 'Crítico' | 'Moderado' | 'Normal';
+  estado_diagnostico: 'Hallazgo Patológico' | 'Fisiológico Normal' | 'Sin datos interpretables';
+  severidad: 'Crítico' | 'Moderado' | 'Normal' | 'Sin dato';
   concordancia: string;
   conclusion_laboratorio: string;
 }

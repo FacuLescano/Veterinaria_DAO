@@ -435,6 +435,11 @@ class OrdenAnalisisService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"La muestra con ID {muestra.id} no pertenece a la orden #{orden.id}",
             )
+        if muestra.estado not in {"extraida", "pendiente_preparacion", "lista_para_envio"} or muestra.envio:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Solo se pueden vincular muestras que todavía no fueron empaquetadas ni enviadas.",
+            )
 
         detalles_dict = {d.id: d for d in orden.detalles}
         asociados = []

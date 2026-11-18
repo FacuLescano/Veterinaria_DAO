@@ -419,15 +419,16 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const veterinarianId = await obtenerVeterinarioId(data.veterinario);
     const created = await api<any>('/api/v1/consultas', { method: 'POST', body: JSON.stringify({
       pet_id: Number(data.mascotaId), veterinarian_id: veterinarianId,
+      appointment_id: data.turnoId ? Number(data.turnoId) : null,
       attended_at: `${data.fecha}T${data.hora}:00`, reason: data.motivo,
       observations: data.evaluacionClinica, diagnosis: data.diagnosticoPresuntivo, treatment: data.tratamiento,
     }) });
-    const newConsulta: ConsultaMedica = { ...data, id: String(created.id) };
+    const newConsulta: ConsultaMedica = { ...data, id: String(created.id), turnoId: created.appointment_id ? String(created.appointment_id) : undefined };
     setConsultas(prev => [newConsulta, ...prev]);
 
     // If it was linked to a turno, mark the turno as Atendido
-    if (data.turnoId) {
-      setTurnos(prev => prev.map(t => t.id === data.turnoId ? { ...t, estado: 'Atendido' } : t));
+    if (created.appointment_id) {
+      setTurnos(prev => prev.map(t => t.id === String(created.appointment_id) ? { ...t, estado: 'Atendido' } : t));
     }
 
     showToast({

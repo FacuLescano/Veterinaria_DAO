@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -64,8 +64,16 @@ class HistorialResponsableMascota(Base):
 
 class Turno(Base):
     __tablename__ = "turnos"
-    __table_args__ = (UniqueConstraint("veterinarian_id", "scheduled_at", name="uq_vet_turno_horario"),)
-
+    __table_args__ = (
+        Index(
+            "uq_vet_turno_horario_activo",
+            "veterinarian_id",
+            "scheduled_at",
+            unique=True,
+            sqlite_where=text("status NOT IN ('cancelado', 'atendido', 'ausente')"),
+            postgresql_where=text("status NOT IN ('cancelado', 'atendido', 'ausente')"),
+        ),
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     pet_id: Mapped[int] = mapped_column(ForeignKey("mascotas.id"), index=True)
     veterinarian_id: Mapped[int] = mapped_column(ForeignKey("veterinarios.id"), index=True)

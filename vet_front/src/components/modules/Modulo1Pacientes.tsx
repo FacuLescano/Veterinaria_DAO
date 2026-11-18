@@ -91,6 +91,7 @@ export const Modulo1Pacientes: React.FC = () => {
   // New Consulta Form State
   const [newConsultaData, setNewConsultaData] = useState({
     mascotaId: mascotas[0]?.id || '',
+    turnoId: '',
     veterinario: 'Dr. Alejandro Morales',
     motivo: '',
     evaluacionClinica: '',
@@ -181,6 +182,7 @@ export const Modulo1Pacientes: React.FC = () => {
     try {
     const consultaCreated = await addConsulta({
       mascotaId: newConsultaData.mascotaId,
+      turnoId: newConsultaData.turnoId || undefined,
       veterinario: newConsultaData.veterinario,
       fecha,
       hora,
@@ -215,6 +217,7 @@ export const Modulo1Pacientes: React.FC = () => {
     setIsNewConsultaModalOpen(false);
     setNewConsultaData({
       mascotaId: mascotas[0]?.id || '',
+      turnoId: '',
       veterinario: 'Dr. Alejandro Morales',
       motivo: '',
       evaluacionClinica: '',
@@ -1188,6 +1191,20 @@ export const Modulo1Pacientes: React.FC = () => {
                 className="w-full p-2 bg-white border border-[#E7E2DA] rounded-lg"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-neutral-600 font-medium mb-1">Turno asociado (opcional)</label>
+            <select
+              value={newConsultaData.turnoId}
+              onChange={e => setNewConsultaData({ ...newConsultaData, turnoId: e.target.value })}
+              className="w-full p-2 bg-white border border-[#E7E2DA] rounded-lg"
+            >
+              <option value="">Consulta sin turno</option>
+              {turnos.filter(t => t.mascotaId === newConsultaData.mascotaId && !['Atendido', 'Cancelado', 'Ausente'].includes(t.estado)).map(turno => (
+                <option key={turno.id} value={turno.id}>{turno.fecha} {turno.hora} · {turno.veterinario} ({turno.estado})</option>
+              ))}
+            </select>
           </div>
 
           <div>

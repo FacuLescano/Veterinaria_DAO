@@ -440,18 +440,17 @@ export const ReporteTiemposSla: React.FC = () => {
                       <span className="block">{d.transportista}</span>
                       <span className="text-[10px] font-mono text-neutral-400">{d.remito_numero}</span>
                     </td>
-                    <td className="py-2.5 px-3 text-right font-mono text-neutral-600">{d.tiempo_transito_horas}h</td>
-                    <td className="py-2.5 px-3 text-right font-mono text-neutral-600">{d.tiempo_procesamiento_horas}h</td>
-                    <td className="py-2.5 px-3 text-right font-mono font-bold text-neutral-900">{d.tiempo_total_horas}h</td>
+                    <td className="py-2.5 px-3 text-right font-mono text-neutral-600">{d.tiempo_transito_horas == null ? 'Sin dato' : `${d.tiempo_transito_horas}h`}</td>
+                    <td className="py-2.5 px-3 text-right font-mono text-neutral-600">{d.tiempo_procesamiento_horas == null ? 'Sin dato' : `${d.tiempo_procesamiento_horas}h`}</td>
+                    <td className="py-2.5 px-3 text-right font-mono font-bold text-neutral-900">{d.tiempo_total_horas == null ? 'En proceso' : `${d.tiempo_total_horas}h`}</td>
                     <td className="py-2.5 px-3 text-right font-mono text-neutral-500">{d.sla_objetivo_horas}h</td>
                     <td className="py-2.5 px-3 text-center">
                       <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                        d.cumple_sla 
+                        d.cumple_sla == null ? 'bg-neutral-100 text-neutral-600 border border-neutral-200' : d.cumple_sla
                           ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
                           : 'bg-rose-100 text-rose-800 border border-rose-200'
                       }`}>
-                        {d.cumple_sla ? <Check className="w-3 h-3 text-emerald-600" /> : <X className="w-3 h-3 text-rose-600" />}
-                        {d.cumple_sla ? 'En Plazo' : `Demora (+${Math.abs(d.diferencia_sla_horas)}h)`}
+                        {d.cumple_sla == null ? 'Pendiente' : d.cumple_sla ? <><Check className="w-3 h-3 text-emerald-600" />En Plazo</> : <><X className="w-3 h-3 text-rose-600" />Demora (+{Math.abs(d.diferencia_sla_horas || 0)}h)</>}
                       </span>
                     </td>
                   </tr>
