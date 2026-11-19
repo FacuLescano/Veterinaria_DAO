@@ -20,6 +20,18 @@ import {
   Pencil
 } from 'lucide-react';
 
+const HORARIOS_TURNO = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '15:00', '15:30', '16:00'];
+
+const fechaLocalISO = (fecha = new Date()) => {
+  const desplazamientoMs = fecha.getTimezoneOffset() * 60_000;
+  return new Date(fecha.getTime() - desplazamientoMs).toISOString().slice(0, 10);
+};
+
+const turnoEsPasado = (fecha: string, hora: string) => {
+  if (!fecha || !hora) return false;
+  return new Date(`${fecha}T${hora}:00`).getTime() <= Date.now();
+};
+
 export const Modulo1Pacientes: React.FC = () => {
   const {
     responsables,
@@ -83,7 +95,7 @@ export const Modulo1Pacientes: React.FC = () => {
   const [newTurnoData, setNewTurnoData] = useState({
     mascotaId: mascotas[0]?.id || '',
     veterinario: 'Dr. Alejandro Morales (M.P. 4812)',
-    fecha: new Date().toISOString().split('T')[0],
+    fecha: fechaLocalISO(),
     hora: '10:30',
     motivo: ''
   });
@@ -160,6 +172,15 @@ export const Modulo1Pacientes: React.FC = () => {
     e.preventDefault();
     const pet = mascotas.find(m => m.id === newTurnoData.mascotaId);
     if (!pet) return;
+
+    if (turnoEsPasado(newTurnoData.fecha, newTurnoData.hora)) {
+      showToast({
+        type: 'error',
+        title: 'Fecha u horario inválido',
+        description: 'No se puede agendar un turno en una fecha u horario pasado.'
+      });
+      return;
+    }
 
     const res = await addTurno({
       ...newTurnoData,
@@ -1102,6 +1123,7 @@ export const Modulo1Pacientes: React.FC = () => {
               <input
                 type="date"
                 required
+                min={fechaLocalISO()}
                 value={newTurnoData.fecha}
                 onChange={e => setNewTurnoData({ ...newTurnoData, fecha: e.target.value })}
                 className="w-full p-2 bg-white border border-[#E7E2DA] rounded-lg"
@@ -1114,15 +1136,11 @@ export const Modulo1Pacientes: React.FC = () => {
                 onChange={e => setNewTurnoData({ ...newTurnoData, hora: e.target.value })}
                 className="w-full p-2 bg-white border border-[#E7E2DA] rounded-lg font-mono"
               >
-                <option value="09:00">09:00 hs</option>
-                <option value="09:30">09:30 hs</option>
-                <option value="10:00">10:00 hs</option>
-                <option value="10:30">10:30 hs</option>
-                <option value="11:00">11:00 hs</option>
-                <option value="11:30">11:30 hs</option>
-                <option value="15:00">15:00 hs</option>
-                <option value="15:30">15:30 hs</option>
-                <option value="16:00">16:00 hs</option>
+                {HORARIOS_TURNO.map(hora => (
+                  <option key={hora} value={hora} disabled={turnoEsPasado(newTurnoData.fecha, hora)}>
+                    {hora} hs
+                  </option>
+                ))}
               </select>
             </div>
           </div>
