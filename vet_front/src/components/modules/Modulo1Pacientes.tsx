@@ -196,6 +196,18 @@ export const Modulo1Pacientes: React.FC = () => {
   // Handle Consulta Submission
   const handleSaveConsulta = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (newConsultaData.turnoId) {
+      const turno = turnos.find((item) => item.id === newConsultaData.turnoId);
+      const mismoProfesional = turno?.veterinario.trim().toLocaleLowerCase() === newConsultaData.veterinario.trim().toLocaleLowerCase();
+      if (!turno || turno.mascotaId !== newConsultaData.mascotaId || !mismoProfesional) {
+        showToast({
+          type: 'error',
+          title: 'El turno no coincide con la consulta',
+          description: 'Verificá que el paciente y el veterinario actuante sean los mismos que figuran en el turno.'
+        });
+        return;
+      }
+    }
     const now = new Date();
     const hora = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     const fecha = now.toISOString().split('T')[0];
@@ -321,7 +333,10 @@ export const Modulo1Pacientes: React.FC = () => {
 
           {subTab === 'consultas' && (
             <button
-              onClick={() => setIsNewConsultaModalOpen(true)}
+              onClick={() => {
+                setNewConsultaData((prev) => ({ ...prev, turnoId: '' }));
+                setIsNewConsultaModalOpen(true);
+              }}
               className="px-3 py-2 text-xs font-semibold text-white bg-[#2D5864] hover:bg-[#23454f] rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
             >
               <Stethoscope className="w-3.5 h-3.5" />
@@ -532,8 +547,9 @@ export const Modulo1Pacientes: React.FC = () => {
                                   setNewConsultaData(prev => ({
                                     ...prev,
                                     mascotaId: turno.mascotaId,
+                                    turnoId: turno.id,
                                     motivo: turno.motivo,
-                                    veterinario: turno.veterinario.split('(')[0].trim()
+                                    veterinario: turno.veterinario
                                   }));
                                   setIsNewConsultaModalOpen(true);
                                 }}
@@ -1189,7 +1205,7 @@ export const Modulo1Pacientes: React.FC = () => {
               <label className="block text-neutral-600 font-medium mb-1">Paciente *</label>
               <select
                 value={newConsultaData.mascotaId}
-                onChange={e => setNewConsultaData({ ...newConsultaData, mascotaId: e.target.value })}
+                onChange={e => setNewConsultaData({ ...newConsultaData, mascotaId: e.target.value, turnoId: '' })}
                 className="w-full p-2 bg-white border border-[#E7E2DA] rounded-lg"
               >
                 {mascotas.map(m => (
@@ -1215,7 +1231,14 @@ export const Modulo1Pacientes: React.FC = () => {
             <label className="block text-neutral-600 font-medium mb-1">Turno asociado (opcional)</label>
             <select
               value={newConsultaData.turnoId}
-              onChange={e => setNewConsultaData({ ...newConsultaData, turnoId: e.target.value })}
+              onChange={e => {
+                const turno = turnos.find((item) => item.id === e.target.value);
+                setNewConsultaData((prev) => ({
+                  ...prev,
+                  turnoId: e.target.value,
+                  veterinario: turno?.veterinario ?? prev.veterinario
+                }));
+              }}
               className="w-full p-2 bg-white border border-[#E7E2DA] rounded-lg"
             >
               <option value="">Consulta sin turno</option>

@@ -232,7 +232,7 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
         setResponsables(responsablesApi.map((r: any): Responsable => ({ id: String(r.id), nombreCompleto: r.full_name, documento: r.document_number, telefono: r.phone, email: r.email || '', domicilio: r.address || '', fechaAlta: '' })));
         setMascotas(mascotasApi.map((m: any): Mascota => ({ id: String(m.id), responsableId: String(m.responsible_id), nombre: m.name, especie: m.species as Mascota['especie'], raza: m.breed || '', sexo: (m.sex || 'Hembra') as Mascota['sexo'], fechaNacimientoAprox: m.birth_date || '', pesoKg: m.weight_kg || 0, microchip: m.microchip || '', alergias: m.notes || '', fotoUrl: m.photo_url || '' })));
         veterinariosApiRef.current = veterinariosApi;
-        setTurnos(turnosApi.map((t: any): Turno => ({ id: String(t.id), mascotaId: String(t.pet_id), responsableId: String(mascotasApi.find((m: any) => m.id === t.pet_id)?.responsible_id || ''), veterinario: veterinariosApi.find((v: any) => v.id === t.veterinarian_id)?.full_name || String(t.veterinarian_id), fecha: t.scheduled_at.slice(0, 10), hora: t.scheduled_at.slice(11, 16), motivo: t.reason || '', estado: estadoTitulo(t.status) as EstadoTurno })));
+        setTurnos(turnosApi.map((t: any): Turno => ({ id: String(t.id), mascotaId: String(t.pet_id), responsableId: String(mascotasApi.find((m: any) => m.id === t.pet_id)?.responsible_id || ''), veterinarioId: String(t.veterinarian_id), veterinario: veterinariosApi.find((v: any) => v.id === t.veterinarian_id)?.full_name || String(t.veterinarian_id), fecha: t.scheduled_at.slice(0, 10), hora: t.scheduled_at.slice(11, 16), motivo: t.reason || '', estado: estadoTitulo(t.status) as EstadoTurno })));
         setConsultas(consultasApi.map((c: any): ConsultaMedica => ({ id: String(c.id), mascotaId: String(c.pet_id), veterinario: veterinariosApi.find((v: any) => v.id === c.veterinarian_id)?.full_name || String(c.veterinarian_id), fecha: c.attended_at.slice(0, 10), hora: c.attended_at.slice(11, 16), motivo: c.reason, evaluacionClinica: c.observations || '', diagnosticoPresuntivo: c.diagnosis || '', tratamiento: c.treatment || '', requiereAnalisis: false, turnoId: c.appointment_id ? String(c.appointment_id) : undefined })));
         setOrdenes(ordenesApi.map(mapOrden));
         setMuestras(ordenesApi.flatMap((o: any) => (o.muestras || []).map((m: any) => mapMuestra(m, enviosApi.find((e: any) => e.muestras?.some((em: any) => em.id === m.id))))));
@@ -385,7 +385,7 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
         pet_id: Number(data.mascotaId), veterinarian_id: veterinarianId,
         scheduled_at: `${data.fecha}T${data.hora}:00`, duration_minutes: 30, reason: data.motivo,
       }) });
-      const newTurno: Turno = { ...data, id: String(created.id), veterinario: data.veterinario };
+      const newTurno: Turno = { ...data, id: String(created.id), veterinarioId: String(created.veterinarian_id), veterinario: data.veterinario };
     setTurnos(prev => [newTurno, ...prev]);
     showToast({
       type: 'success',
@@ -416,7 +416,16 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   const addConsulta = async (data: Omit<ConsultaMedica, 'id'>): Promise<ConsultaMedica> => {
-    const veterinarianId = await obtenerVeterinarioId(data.veterinario);
+    const turno = data.turnoId ? turnos.find((item) => item.id === data.turnoId) : undefined;
+    if (data.turnoId && !turno) {
+      throw new Error('No se encontró el turno seleccionado. Actualizá la agenda e intentá nuevamente.');
+    }
+    if (turno && turno.mascotaId !== data.mascotaId) {
+      throw new Error('El turno seleccionado pertenece a otra mascota.');
+    }
+    const veterinarianId = turno?.veterinarioId
+      ? Number(turno.veterinarioId)
+      : await obtenerVeterinarioId(data.veterinario);
     const created = await api<any>('/api/v1/consultas', { method: 'POST', body: JSON.stringify({
       pet_id: Number(data.mascotaId), veterinarian_id: veterinarianId,
       appointment_id: data.turnoId ? Number(data.turnoId) : null,

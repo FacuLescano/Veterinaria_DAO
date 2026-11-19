@@ -31,6 +31,7 @@ export interface Turno {
   id: string;
   mascotaId: string;
   responsableId: string;
+  veterinarioId?: string;
   veterinario: string;
   fecha: string;
   hora: string;
