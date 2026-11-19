@@ -18,6 +18,7 @@ from app.schemas.patient import (
 
 APPOINTMENT_STATUSES = {"pendiente", "confirmado", "cancelado", "atendido", "ausente"}
 FINAL_APPOINTMENT_STATUSES = {"cancelado", "atendido", "ausente"}
+PAST_APPOINTMENT_DETAIL = "No se puede agendar un turno en una fecha u horario pasado."
 
 
 class PatientService:
@@ -62,6 +63,11 @@ class PatientService:
                     status_code=409,
                     detail="El horario ya está ocupado para este profesional. Seleccioná otro horario.",
                 )
+
+    def _validar_horario_futuro(self, starts_at: datetime):
+        ahora = datetime.now(starts_at.tzinfo) if starts_at.tzinfo is not None else datetime.now()
+        if starts_at <= ahora:
+            raise HTTPException(status_code=422, detail=PAST_APPOINTMENT_DETAIL)
 
     def crear_responsable(self, payload: CrearResponsable):
         entity = Responsable(**payload.model_dump()); self.db.add(entity); self._commit(); self.db.refresh(entity); return entity
@@ -118,6 +124,7 @@ class PatientService:
     def crear_turno(self, payload: CrearTurno):
         self._get(Mascota, payload.pet_id, "Mascota"); vet = self._get(Veterinario, payload.veterinarian_id, "Veterinario")
         if not vet.active: raise HTTPException(status_code=409, detail="El profesional no está activo")
+        self._validar_horario_futuro(payload.scheduled_at)
         self._check_overlap(payload.veterinarian_id, payload.scheduled_at, payload.duration_minutes)
         entity = Turno(**payload.model_dump()); self.db.add(entity); self.db.flush()
         self.db.add(HistorialTurno(appointment_id=entity.id, event="creado", new_scheduled_at=entity.scheduled_at, new_status=entity.status))
@@ -139,6 +146,8 @@ class PatientService:
         start = changes.get("scheduled_at", entity.scheduled_at); duration = changes.get("duration_minutes", entity.duration_minutes)
         self._get(Mascota, pet_id, "Mascota"); vet = self._get(Veterinario, vet_id, "Veterinario")
         if not vet.active: raise HTTPException(status_code=409, detail="El profesional no está activo")
+        if start != entity.scheduled_at:
+            self._validar_horario_futuro(start)
         self._check_overlap(vet_id, start, duration, entity.id)
         if start != entity.scheduled_at:
             self.db.add(HistorialTurno(appointment_id=entity.id, event="reprogramado", previous_scheduled_at=entity.scheduled_at, new_scheduled_at=start, previous_status=entity.status, new_status=entity.status, reason=changes.get("reason")))

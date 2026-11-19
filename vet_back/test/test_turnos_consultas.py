@@ -1,3 +1,8 @@
+from datetime import datetime
+
+import pytest
+
+
 def crear_turno(client, datos_prueba, scheduled_at="2030-05-10T10:00:00"):
     return client.post("/api/v1/turnos", json={
         "pet_id": 1,
@@ -6,6 +11,24 @@ def crear_turno(client, datos_prueba, scheduled_at="2030-05-10T10:00:00"):
         "duration_minutes": 30,
         "reason": "Control",
     })
+
+
+@pytest.mark.parametrize("scheduled_at", ["2030-05-09T10:00:00", "2030-05-10T10:00:00"])
+def test_turno_rechaza_fecha_u_horario_pasado(client, datos_prueba, monkeypatch, scheduled_at):
+    import app.services.patient_service as patient_service
+
+    class FechaHoraFija(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            actual = cls(2030, 5, 10, 10, 30)
+            return actual.replace(tzinfo=tz) if tz is not None else actual
+
+    monkeypatch.setattr(patient_service, "datetime", FechaHoraFija)
+
+    respuesta = crear_turno(client, datos_prueba, scheduled_at)
+
+    assert respuesta.status_code == 422
+    assert respuesta.json()["detail"] == "No se puede agendar un turno en una fecha u horario pasado."
 
 
 def test_turno_actualiza_estado_solo_al_confirmar_consulta(client, datos_prueba):
