@@ -64,21 +64,41 @@ class ServicioMuestrasRechazadas:
         }
 
     def _recopilar_detalles_rechazadas(self) -> list[dict[str, Any]]:
-        from app.models.recepcion import RecepcionEnvio, VerificacionPrecinto
+        from app.models.recepcion import RecepcionEnvio
+        from app.services.recepcion import (
+            normalizar_fecha_utc,
+            recepcion_pertenece_al_envio_actual,
+            verificacion_actual_del_envio,
+        )
 
-        verificaciones = self.db.scalars(select(VerificacionPrecinto)).all()
         recepciones = self.db.scalars(select(RecepcionEnvio)).all()
-        verif_por_envio = {str(v.envio_id): v for v in verificaciones}
-        recepcion_por_envio = {str(r.envio_id): r for r in recepciones}
+        recepciones_por_envio: dict[str, list[RecepcionEnvio]] = {}
+        for recepcion in recepciones:
+            recepciones_por_envio.setdefault(str(recepcion.envio_id), []).append(recepcion)
         registros = []
         for muestra in self.db.scalars(select(Muestra)).all():
             envio = muestra.envio
-            verif = verif_por_envio.get(str(envio.id)) if envio else None
-            recepcion = recepcion_por_envio.get(str(envio.id)) if envio else None
+            verif = verificacion_actual_del_envio(self.db, envio) if envio else None
+            recepcion = None
+            if envio:
+                recepcion = max(
+                    (
+                        registro for registro in recepciones_por_envio.get(str(envio.id), [])
+                        if recepcion_pertenece_al_envio_actual(registro, envio)
+                    ),
+                    key=lambda registro: normalizar_fecha_utc(registro.fecha_recepcion),
+                    default=None,
+                )
             codigo_invalido = bool(verif and verif.codigo_esperado is not None and verif.codigo_observado != verif.codigo_esperado)
             rechazada = muestra.estado == "rechazada" or bool(verif and (verif.estado.strip().lower() != "integro" or codigo_invalido))
-            aceptada = not rechazada and (muestra.estado in {"recibida", "analizada"} or bool(verif and verif.estado.strip().lower() == "integro"))
             recibida = bool(recepcion and str(muestra.id) in {str(x) for x in (recepcion.muestras_recibidas or [])})
+            aceptada = bool(
+                not rechazada
+                and recibida
+                and verif
+                and verif.estado.strip().lower() == "integro"
+                and not codigo_invalido
+            )
             fecha_recepcion = recepcion.fecha_recepcion if recibida else None
             horas = None
             if fecha_recepcion and muestra.fecha_extraccion:

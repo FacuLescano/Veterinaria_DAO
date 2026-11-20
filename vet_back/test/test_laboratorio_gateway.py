@@ -138,10 +138,37 @@ def test_no_sobrescribe_resultado_previamente_registrado(datos_prueba, monkeypat
         db.commit()
         eventos = []
         monkeypatch.setattr(resultados_analisis, "notificar", lambda evento, sesion: eventos.append(evento))
+        class GatewayNoDebeConsultarse:
+            def consultar_resultados(self, *args, **kwargs):
+                raise AssertionError("No debe consultarse al laboratorio cuando ya hay resultados vigentes")
+
         with pytest.raises(HTTPException) as error:
-            recepcion.recibir_resultados_laboratorio(db, str(muestra_id))
+            recepcion.recibir_resultados_laboratorio(
+                db, str(muestra_id), gateway=GatewayNoDebeConsultarse()
+            )
         assert error.value.status_code == 409
         assert db.query(ResultadoAnalisis).filter_by(orden_id=str(orden_id)).count() == 1
         assert eventos == []
+    finally:
+        db.close()
+
+
+def test_resultado_viejo_con_id_reutilizado_no_bloquea_la_muestra_actual(datos_prueba):
+    db = TestingSessionLocal()
+    try:
+        muestra_id, orden_id, detalle_ids = crear_muestra_recibida(db, datos_prueba, "M-STALE")
+        orden = db.get(OrdenAnalisis, orden_id)
+        db.add(ResultadoAnalisis(
+            orden_id=str(orden_id), detalle_orden_id=str(detalle_ids[0]), muestra_id=str(muestra_id),
+            paciente_id=str(orden.consulta.pet_id), fecha_recepcion=datetime(2020, 1, 1, tzinfo=timezone.utc),
+            procedencia="Registro histórico", registrado_por="Sistema anterior", datos={"valores": []},
+        ))
+        db.commit()
+
+        respuesta = recepcion.recibir_resultados_laboratorio(db, str(muestra_id))
+
+        assert respuesta["estado"] == "registrado"
+        assert len(respuesta["resultados"]) == 2
+        assert db.get(Muestra, muestra_id).estado == "analizada"
     finally:
         db.close()

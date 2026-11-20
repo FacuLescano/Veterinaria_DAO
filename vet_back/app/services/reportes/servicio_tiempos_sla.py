@@ -76,19 +76,44 @@ class ServicioTiemposSla:
         }
 
     def _recopilar_detalles_muestras(self) -> list[dict[str, Any]]:
+        from app.services.recepcion import normalizar_fecha_utc
+
         resultados = self.db.scalars(select(ResultadoAnalisis)).all()
-        muestras_con_resultado = {str(r.muestra_id) for r in resultados if r.muestra_id and r.estado == "recibido"}
-        detalles_con_resultado = {str(r.detalle_orden_id) for r in resultados if r.estado == "recibido"}
+        resultados_por_muestra: dict[str, list[ResultadoAnalisis]] = {}
+        for resultado in resultados:
+            if resultado.muestra_id and resultado.estado == "recibido":
+                resultados_por_muestra.setdefault(str(resultado.muestra_id), []).append(resultado)
+        resultados_por_detalle_sin_muestra: dict[str, list[ResultadoAnalisis]] = {}
+        for resultado in resultados:
+            if not resultado.muestra_id and resultado.estado == "recibido":
+                resultados_por_detalle_sin_muestra.setdefault(str(resultado.detalle_orden_id), []).append(resultado)
+        muestras_por_detalle: dict[str, int] = {}
+        for muestra in self.db.scalars(select(Muestra)).all():
+            for asociacion in muestra.asociaciones_detalles:
+                detalle_id = str(asociacion.detalle_id)
+                muestras_por_detalle[detalle_id] = muestras_por_detalle.get(detalle_id, 0) + 1
         registros = []
         for muestra in self.db.scalars(select(Muestra)).all():
             orden = muestra.orden
             consulta = orden.consulta if orden else None
             paciente = consulta.pet if consulta else None
             tipo_muestra = muestra.tipo_muestra.nombre if muestra.tipo_muestra else "Sin tipo registrado"
-            tiene_resultado = str(muestra.id) in muestras_con_resultado or any(
-                str(asociacion.detalle_id) in detalles_con_resultado
+            fecha_extraccion = muestra.fecha_extraccion
+            resultados_explicitos = any(
+                fecha_extraccion is not None
+                and normalizar_fecha_utc(resultado.fecha_recepcion) >= normalizar_fecha_utc(fecha_extraccion)
+                for resultado in resultados_por_muestra.get(str(muestra.id), [])
+            )
+            resultado_legacy_sin_muestra = any(
+                muestras_por_detalle.get(str(asociacion.detalle_id)) == 1
+                and fecha_extraccion is not None
+                and any(
+                    normalizar_fecha_utc(resultado.fecha_recepcion) >= normalizar_fecha_utc(fecha_extraccion)
+                    for resultado in resultados_por_detalle_sin_muestra.get(str(asociacion.detalle_id), [])
+                )
                 for asociacion in muestra.asociaciones_detalles
             )
+            tiene_resultado = resultados_explicitos or resultado_legacy_sin_muestra
             registros.append({
                 "muestra_codigo": muestra.codigo_etiqueta,
                 "fecha_extraccion": muestra.fecha_extraccion.strftime("%Y-%m-%d %H:%M") if muestra.fecha_extraccion else "Sin fecha",

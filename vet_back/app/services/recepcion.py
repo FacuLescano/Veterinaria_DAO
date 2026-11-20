@@ -1,10 +1,12 @@
+from datetime import datetime, timezone
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
 
 from app.models.recepcion import Incidencia, RecepcionEnvio, ResultadoAnalisis, VerificacionPrecinto
 from app.models.envio import Envio
-from app.models.orden_analisis import DetalleOrdenAnalisis, Muestra, OrdenAnalisis
+from app.models.orden_analisis import AsociacionDetalleMuestra, DetalleOrdenAnalisis, Muestra, OrdenAnalisis
 from app.core.laboratorio_gateway import LaboratorioMock, RespuestaLaboratorio
 from app.observers.muestra import RecepcionMuestra, publicar_recepcion_muestra
 from app.observers.resultados import ResultadoAnalisisRegistrado, ResultadosRegistrados, resultados_analisis
@@ -13,16 +15,108 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def normalizar_fecha_utc(fecha: datetime) -> datetime:
+    """Normaliza fechas naive de SQLite y fechas con zona para poder compararlas."""
+    if fecha.tzinfo is None:
+        return fecha.replace(tzinfo=timezone.utc)
+    return fecha.astimezone(timezone.utc)
+
+
+def recepcion_pertenece_al_envio_actual(recepcion: RecepcionEnvio, envio: Envio) -> bool:
+    """Ignora recepciones históricas cuyo ID fue reutilizado por un despacho nuevo."""
+    return bool(
+        envio.fecha_despacho
+        and normalizar_fecha_utc(recepcion.fecha_recepcion) >= normalizar_fecha_utc(envio.fecha_despacho)
+    )
+
+
+def verificacion_actual_del_envio(sesion: Session, envio: Envio):
+    """Devuelve la última verificación registrada desde el despacho vigente."""
+    if not envio.fecha_despacho:
+        return None
+    verificaciones = sesion.scalars(
+        select(VerificacionPrecinto).where(VerificacionPrecinto.envio_id == str(envio.id))
+    ).all()
+    actuales = [
+        verificacion for verificacion in verificaciones
+        if normalizar_fecha_utc(verificacion.fecha_verificacion) >= normalizar_fecha_utc(envio.fecha_despacho)
+    ]
+    return max(actuales, key=lambda verificacion: normalizar_fecha_utc(verificacion.fecha_verificacion), default=None)
+
+
+def resultado_es_vigente(sesion: Session, resultado: ResultadoAnalisis) -> bool:
+    """Evita atribuir a órdenes o muestras actuales resultados de IDs reutilizados."""
+    try:
+        orden = sesion.get(OrdenAnalisis, int(resultado.orden_id))
+        detalle = sesion.get(DetalleOrdenAnalisis, int(resultado.detalle_orden_id))
+    except (TypeError, ValueError):
+        return False
+    if not orden or not detalle or detalle.orden_id != orden.id or not orden.created_at:
+        return False
+    if normalizar_fecha_utc(resultado.fecha_recepcion) < normalizar_fecha_utc(orden.created_at):
+        return False
+    if resultado.muestra_id:
+        try:
+            muestra = sesion.get(Muestra, int(resultado.muestra_id))
+        except (TypeError, ValueError):
+            return False
+        if not muestra or muestra.orden_id != orden.id or not muestra.fecha_extraccion:
+            return False
+        if normalizar_fecha_utc(resultado.fecha_recepcion) < normalizar_fecha_utc(muestra.fecha_extraccion):
+            return False
+    return True
+
+
+def resultados_existentes_para_muestra(sesion: Session, muestra: Muestra) -> list[ResultadoAnalisis]:
+    """Busca resultados actuales asociados a la muestra y a sus análisis."""
+    detalle_ids = {str(asociacion.detalle_id) for asociacion in muestra.asociaciones_detalles}
+    if not muestra.orden_id or not detalle_ids:
+        return []
+    candidatos = sesion.scalars(
+        select(ResultadoAnalisis).where(
+            ResultadoAnalisis.orden_id == str(muestra.orden_id),
+            ResultadoAnalisis.detalle_orden_id.in_(detalle_ids),
+            (ResultadoAnalisis.muestra_id == str(muestra.id)) | ResultadoAnalisis.muestra_id.is_(None),
+        )
+    ).all()
+    resultados = []
+    for resultado in candidatos:
+        if not resultado_es_vigente(sesion, resultado):
+            continue
+        if resultado.muestra_id:
+            resultados.append(resultado)
+            continue
+        detalle_id = int(resultado.detalle_orden_id)
+        otras_asociaciones = sesion.scalars(
+            select(AsociacionDetalleMuestra.muestra_id).where(
+                AsociacionDetalleMuestra.detalle_id == detalle_id
+            ).limit(2)
+        ).all()
+        if len(otras_asociaciones) == 1 and str(otras_asociaciones[0]) == str(muestra.id):
+            resultados.append(resultado)
+    return resultados
+
+
 def registrar_recepcion(sesion: Session, datos):
     envio = sesion.get(Envio, int(datos.envio_id))
     if not envio or envio.estado != "despachado":
         raise HTTPException(404, "No se encontró un envío despachado con ese identificador")
+    if not envio.fecha_despacho:
+        raise HTTPException(409, "El envío todavía no tiene una fecha de despacho registrada")
+    if normalizar_fecha_utc(datos.fecha_recepcion) < normalizar_fecha_utc(envio.fecha_despacho):
+        raise HTTPException(422, "La fecha de recepción no puede ser anterior al despacho")
     despachadas_reales = {str(m.id) for m in envio.muestras}
     despachadas = set(datos.muestras_despachadas)
     recibidas = set(datos.muestras_recibidas)
     if despachadas != despachadas_reales or not recibidas.issubset(despachadas_reales):
         raise HTTPException(422, "Las muestras informadas no coinciden con el contenido del envío")
-    if sesion.scalar(select(RecepcionEnvio.id).where(RecepcionEnvio.envio_id == datos.envio_id)):
+    verificaciones = verificacion_actual_del_envio(sesion, envio)
+    if not verificaciones:
+        raise HTTPException(409, "Registrá la verificación del precinto antes de registrar la recepción")
+    recepciones_actuales = sesion.scalars(
+        select(RecepcionEnvio).where(RecepcionEnvio.envio_id == datos.envio_id)
+    ).all()
+    if any(recepcion_pertenece_al_envio_actual(recepcion, envio) for recepcion in recepciones_actuales):
         raise HTTPException(409, "Este envío ya tiene una recepción registrada")
     estado = "completa" if despachadas == recibidas else "parcial"
     recepcion = RecepcionEnvio(**datos.model_dump(), estado=estado)
@@ -57,6 +151,13 @@ def registrar_verificacion(sesion: Session, datos):
     envio = sesion.get(Envio, int(datos.envio_id))
     if not envio or envio.estado != "despachado":
         raise HTTPException(404, "No se encontró un envío despachado con ese identificador")
+    if not envio.fecha_despacho or normalizar_fecha_utc(datos.fecha_verificacion) < normalizar_fecha_utc(envio.fecha_despacho):
+        raise HTTPException(422, "La verificación no puede ser anterior al despacho vigente")
+    recepciones = sesion.scalars(
+        select(RecepcionEnvio).where(RecepcionEnvio.envio_id == datos.envio_id)
+    ).all()
+    if any(recepcion_pertenece_al_envio_actual(recepcion, envio) for recepcion in recepciones):
+        raise HTTPException(409, "Este envío ya tiene una recepción registrada")
     verificacion = VerificacionPrecinto(**datos.model_dump())
     sesion.add(verificacion)
     anomalia_codigo = datos.codigo_esperado is not None and datos.codigo_observado != datos.codigo_esperado
@@ -120,33 +221,28 @@ def crear_incidencia(sesion: Session, datos):
 
 
 def registrar_resultado(sesion: Session, datos):
+    try:
+        detalle = sesion.get(DetalleOrdenAnalisis, int(datos.detalle_orden_id))
+        orden = sesion.get(OrdenAnalisis, int(datos.orden_id))
+    except (TypeError, ValueError):
+        detalle = orden = None
+    if not detalle or not orden or detalle.orden_id != orden.id:
+        raise HTTPException(404, "No se encontró el análisis de la orden indicada")
+    paciente_id_real = orden.consulta.pet_id if orden.consulta else None
+    if paciente_id_real is None or str(paciente_id_real) != str(datos.paciente_id):
+        raise HTTPException(422, "El paciente informado no corresponde a la orden de análisis")
+    muestra_id = str(datos.muestra_id) if datos.muestra_id else None
     identidad_resultado = [
         ResultadoAnalisis.orden_id == datos.orden_id,
         ResultadoAnalisis.detalle_orden_id == datos.detalle_orden_id,
+        ResultadoAnalisis.muestra_id == muestra_id,
     ]
-    if datos.informe_nombre:
-        identidad_resultado.append(ResultadoAnalisis.informe_nombre == datos.informe_nombre)
-    else:
-        identidad_resultado.extend([
-            ResultadoAnalisis.informe_nombre.is_(None),
-            ResultadoAnalisis.paciente_id == datos.paciente_id,
-            ResultadoAnalisis.fecha_recepcion == datos.fecha_recepcion,
-            ResultadoAnalisis.procedencia == datos.procedencia,
-        ])
-    duplicado = sesion.scalar(select(ResultadoAnalisis.id).where(*identidad_resultado))
-    if duplicado:
+    posibles_duplicados = sesion.scalars(select(ResultadoAnalisis).where(*identidad_resultado)).all()
+    if any(resultado_es_vigente(sesion, existente) for existente in posibles_duplicados):
         return None
     resultado = ResultadoAnalisis(**datos.model_dump())
     sesion.add(resultado)
-    detalle = sesion.get(DetalleOrdenAnalisis, int(datos.detalle_orden_id))
-    if not detalle or detalle.orden_id != int(datos.orden_id):
-        raise HTTPException(404, "No se encontró el análisis de la orden indicada")
-    orden = sesion.get(OrdenAnalisis, detalle.orden_id)
-    paciente_id_real = orden.consulta.pet_id if orden and orden.consulta else None
-    if paciente_id_real is None or str(paciente_id_real) != str(datos.paciente_id):
-        raise HTTPException(422, "El paciente informado no corresponde a la orden de análisis")
     detalle.estado = "resultado_listo"
-    orden = sesion.get(OrdenAnalisis, detalle.orden_id)
     if orden and all(d.estado == "resultado_listo" for d in orden.detalles):
         orden.estado = "con_resultados"
     if datos.muestra_id:
@@ -211,6 +307,20 @@ def _validar_respuesta_laboratorio(muestra: Muestra, respuesta: RespuestaLaborat
 
 def consultar_resultados_laboratorio(sesion: Session, muestra_id: str, gateway=None, escenario: str = "multiples"):
     """Consulta la dependencia externa y valida identidad y estructura de su respuesta."""
+    try:
+        muestra_existente = sesion.get(Muestra, int(muestra_id))
+    except (TypeError, ValueError):
+        muestra_existente = None
+    if not muestra_existente:
+        raise HTTPException(404, "No se encontró la muestra")
+    resultados_existentes = resultados_existentes_para_muestra(sesion, muestra_existente)
+    if resultados_existentes:
+        return {
+            "estado": "ya_registrado",
+            "muestra_id": str(muestra_existente.id),
+            "mensaje": "Esta muestra ya tiene resultados registrados para sus análisis.",
+            "resultados": resultados_existentes,
+        }
     muestra, respuesta = _consultar_gateway(sesion, muestra_id, gateway or LaboratorioMock(), escenario)
     return _validar_respuesta_laboratorio(muestra, respuesta)
 
@@ -225,6 +335,8 @@ def recibir_resultados_laboratorio(sesion: Session, muestra_id: str, gateway=Non
         raise HTTPException(404, "No se encontró la muestra")
     if muestra.estado != "recibida":
         raise HTTPException(409, "Solo se pueden recibir resultados para muestras recibidas")
+    if resultados_existentes_para_muestra(sesion, muestra):
+        raise HTTPException(409, "Esta muestra ya tiene resultados registrados; no se consultó nuevamente al laboratorio")
     muestra, respuesta_gateway = _consultar_gateway(sesion, muestra_id, gateway or LaboratorioMock(), escenario)
     consulta = _validar_respuesta_laboratorio(muestra, respuesta_gateway)
     if consulta["estado"] != "disponible":
@@ -234,13 +346,6 @@ def recibir_resultados_laboratorio(sesion: Session, muestra_id: str, gateway=Non
     if paciente_id is None:
         raise HTTPException(422, "No se pudo resolver el paciente asociado a la muestra")
     detalles = {str(a.detalle.id): a.detalle for a in muestra.asociaciones_detalles}
-    detalle_ids = [str(resultado.detalle_id) for resultado in consulta["resultados"]]
-    existentes = sesion.scalars(select(ResultadoAnalisis.id).where(
-        ResultadoAnalisis.orden_id == str(orden.id),
-        ResultadoAnalisis.detalle_orden_id.in_(detalle_ids),
-    )).all()
-    if existentes:
-        raise HTTPException(409, "Ya existen resultados para uno o más análisis de esta muestra")
     fecha = respuesta_gateway.fecha_recepcion
     creados = []
     try:

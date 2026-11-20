@@ -316,7 +316,9 @@ export const Modulo4RecepcionResultados: React.FC = () => {
             <h4 className="text-xs font-bold uppercase tracking-wider text-[#2D5864]">Consultar resultados del laboratorio externo</h4>
             <p className="mt-1 text-[11px] text-neutral-500">Solo se consultan muestras con recepción verificada y estado Recibida.</p>
             <div className="mt-3 space-y-2">
-              {muestras.filter(m => m.estadoActual === 'Recibida').map(muestra => {
+              {muestras.filter(m => m.estadoActual === 'Recibida' && !resultados.some(
+                resultado => resultado.muestraId === m.id && resultado.ordenId === m.ordenId
+              )).map(muestra => {
                 const orden = ordenes.find(o => o.id === muestra.ordenId);
                 const analisis = orden?.detalles.filter(d => d.muestraAsociadaId === muestra.id).map(d => d.tipoAnalisis).join(', ') || 'Análisis asociados';
                 return <div key={muestra.id} className="flex flex-col gap-2 rounded-lg border border-neutral-100 p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -330,7 +332,9 @@ export const Modulo4RecepcionResultados: React.FC = () => {
                   >Consultar y registrar resultados</button>
                 </div>;
               })}
-              {!muestras.some(m => m.estadoActual === 'Recibida') && <p className="text-xs text-neutral-500">No hay muestras recibidas pendientes de resultados.</p>}
+              {!muestras.some(m => m.estadoActual === 'Recibida' && !resultados.some(
+                resultado => resultado.muestraId === m.id && resultado.ordenId === m.ordenId
+              )) && <p className="text-xs text-neutral-500">No hay muestras recibidas sin resultados registrados.</p>}
             </div>
           </section>
           <div className="grid grid-cols-1 gap-4">

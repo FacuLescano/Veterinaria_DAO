@@ -1,16 +1,17 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
+from fastapi import HTTPException
 
 from app.models.notificacion import NotificacionVeterinario
 from app.models.envio import Conservadora, Envio, envio_muestras
 from app.models.orden_analisis import DetalleOrdenAnalisis, Muestra, OrdenAnalisis
 from app.models.paciente import Consulta, Mascota, Responsable, Veterinario
-from app.models.recepcion import ResultadoAnalisis
+from app.models.recepcion import RecepcionEnvio, ResultadoAnalisis
 from app.api.patients import listar_notificaciones
 from app.observers.muestra import RecepcionMuestra, VeterinarioObserver
 from app.observers.resultados import ResponsableMascotaObserver, ResultadosRegistrados, resultados_analisis
-from app.schemas.recepcion import ResultadoEntrada, VerificacionPrecintoEntrada
+from app.schemas.recepcion import RecepcionEntrada, ResultadoEntrada, VerificacionPrecintoEntrada
 from app.services import recepcion as servicio_recepcion
 from test.conftest import TestingSessionLocal
 
@@ -70,7 +71,7 @@ def test_verificacion_precinto_publica_aviso_de_recepcion(datos_prueba, condicio
         db.flush()
         envio = Envio(
             origen="Clínica", destino="Laboratorio", condiciones_empaquetado="Refrigerado",
-            estado="despachado",
+            estado="despachado", fecha_despacho=datetime.now(timezone.utc) - timedelta(seconds=1),
         )
         db.add(envio)
         db.flush()
@@ -100,6 +101,87 @@ def test_verificacion_precinto_publica_aviso_de_recepcion(datos_prueba, condicio
         bandeja = listar_notificaciones(db=db)
         assert len(bandeja) == 1
         assert bandeja[0].estado_nuevo == esperado
+    finally:
+        db.close()
+
+
+@pytest.mark.parametrize(
+    "condicion,codigo_observado",
+    [("integro", "PREC-RECEPCION"), ("roto", "PREC-RECEPCION"), ("ausente", None), ("otra_anomalia", "NO COINCIDE")],
+)
+def test_recepcion_se_puede_registrar_con_cualquier_verificacion_de_precinto(
+    datos_prueba, condicion, codigo_observado
+):
+    db = TestingSessionLocal()
+    try:
+        consulta = db.get(Consulta, datos_prueba["consulta_id"])
+        orden = OrdenAnalisis(consulta_id=consulta.id, veterinario_id=datos_prueba["veterinario_id"], estado="enviada")
+        muestra = Muestra(
+            codigo_etiqueta=f"M-RECEPCION-{condicion}", orden_id=0,
+            tipo_muestra_id=datos_prueba["tipo_muestra_id"], responsable_extraccion="Dra. Lopez",
+            condiciones_conservacion="Refrigerada", estado="enviada",
+        )
+        db.add(orden)
+        db.flush()
+        muestra.orden_id = orden.id
+        conservadora = Conservadora(codigo=f"C-RECEPCION-{condicion}", descripcion="Prueba", disponible=False)
+        envio = Envio(
+            origen="Clínica", destino="Laboratorio", condiciones_empaquetado="Refrigerado",
+            estado="despachado", fecha_despacho=datetime.now(timezone.utc) - timedelta(seconds=1),
+        )
+        db.add_all([muestra, conservadora, envio])
+        db.flush()
+        db.execute(envio_muestras.insert().values(
+            envio_id=envio.id, muestra_id=muestra.id, conservadora_id=conservadora.id
+        ))
+        db.commit()
+
+        servicio_recepcion.registrar_verificacion(db, VerificacionPrecintoEntrada(
+            envio_id=str(envio.id), estado=condicion, fecha_verificacion=datetime.now(timezone.utc),
+            responsable_id="Operador", codigo_esperado="PREC-RECEPCION", codigo_observado=codigo_observado,
+        ))
+        recepcion = servicio_recepcion.registrar_recepcion(db, RecepcionEntrada(
+            envio_id=str(envio.id), fecha_recepcion=datetime.now(timezone.utc), responsable_id="Operador",
+            muestras_despachadas=[str(muestra.id)], muestras_recibidas=[str(muestra.id)],
+        ))
+
+        assert recepcion.estado == "completa"
+        assert db.query(RecepcionEnvio).filter_by(envio_id=str(envio.id)).count() == 1
+    finally:
+        db.close()
+
+
+def test_recepcion_sigue_exigiendo_una_verificacion_de_precinto(datos_prueba):
+    db = TestingSessionLocal()
+    try:
+        consulta = db.get(Consulta, datos_prueba["consulta_id"])
+        orden = OrdenAnalisis(consulta_id=consulta.id, veterinario_id=datos_prueba["veterinario_id"], estado="enviada")
+        db.add(orden)
+        db.flush()
+        muestra = Muestra(
+            codigo_etiqueta="M-RECEPCION-SIN-VERIFICAR", orden_id=orden.id,
+            tipo_muestra_id=datos_prueba["tipo_muestra_id"], responsable_extraccion="Dra. Lopez",
+            condiciones_conservacion="Refrigerada", estado="enviada",
+        )
+        conservadora = Conservadora(codigo="C-RECEPCION-SIN-VERIFICAR", descripcion="Prueba", disponible=False)
+        envio = Envio(
+            origen="Clínica", destino="Laboratorio", condiciones_empaquetado="Refrigerado",
+            estado="despachado", fecha_despacho=datetime.now(timezone.utc) - timedelta(seconds=1),
+        )
+        db.add_all([muestra, conservadora, envio])
+        db.flush()
+        db.execute(envio_muestras.insert().values(
+            envio_id=envio.id, muestra_id=muestra.id, conservadora_id=conservadora.id
+        ))
+        db.commit()
+
+        with pytest.raises(HTTPException, match="Registrá la verificación del precinto") as error:
+            servicio_recepcion.registrar_recepcion(db, RecepcionEntrada(
+                envio_id=str(envio.id), fecha_recepcion=datetime.now(timezone.utc), responsable_id="Operador",
+                muestras_despachadas=[str(muestra.id)], muestras_recibidas=[str(muestra.id)],
+            ))
+        assert error.value.status_code == 409
+        assert db.query(RecepcionEnvio).filter_by(envio_id=str(envio.id)).count() == 0
     finally:
         db.close()
 

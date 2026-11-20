@@ -10,6 +10,7 @@ from app.schemas.recepcion import (
 )
 from app.models.recepcion import Incidencia, RecepcionEnvio, ResultadoAnalisis, VerificacionPrecinto
 from app.services import recepcion as servicios
+from app.services.recepcion import recepcion_pertenece_al_envio_actual
 from app.core.recepcion_integracion import listar_envios_despachados
 from app.core.laboratorio_gateway import LaboratorioGateway, LaboratorioMock
 
@@ -29,7 +30,10 @@ def listar_envios_pendientes(sesion: Session = Depends(obtener_sesion)):
     incidencias = sesion.scalars(select(Incidencia)).all()
     resultado = []
     for envio in listar_envios_despachados():
-        recepciones_envio = recepciones_por_envio.get(envio.envio_id, [])
+        recepciones_envio = [
+            recepcion for recepcion in recepciones_por_envio.get(envio.envio_id, [])
+            if recepcion_pertenece_al_envio_actual(recepcion, envio)
+        ]
         muestras_recibidas = {m for r in recepciones_envio for m in r.muestras_recibidas}
         if set(envio.muestras_ids).issubset(muestras_recibidas):
             continue
@@ -139,7 +143,8 @@ def consultar_resultados(orden_id: str | None = None, paciente_id: str | None = 
         consulta = consulta.where(ResultadoAnalisis.paciente_id == paciente_id)
     if estado:
         consulta = consulta.where(ResultadoAnalisis.estado == estado)
-    return sesion.scalars(consulta.order_by(ResultadoAnalisis.fecha_recepcion.desc())).all()
+    resultados = sesion.scalars(consulta.order_by(ResultadoAnalisis.fecha_recepcion.desc())).all()
+    return [resultado for resultado in resultados if servicios.resultado_es_vigente(sesion, resultado)]
 
 
 @enrutador.patch("/resultados/{resultado_id}/estado")

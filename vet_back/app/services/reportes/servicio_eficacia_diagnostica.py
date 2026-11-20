@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.models.orden_analisis import DetalleOrdenAnalisis, Muestra
 from app.models.recepcion import RecepcionEnvio, ResultadoAnalisis
+from app.services.recepcion import normalizar_fecha_utc, recepcion_pertenece_al_envio_actual
 from app.services.reportes.base import fecha_hora_argentina_str, exportar_reporte_excel, exportar_reporte_pdf, enviar_reporte_email as enviar_reporte_email_adjuntos
 
 
@@ -47,22 +48,32 @@ class ServicioEficaciaDiagnostica:
             detalles_periodo.append(detalle)
 
         ids_detalle_periodo = {str(d.id) for d in detalles_periodo}
+        detalles_por_id = {str(d.id): d for d in detalles_periodo}
         resultados = self.db.scalars(
             select(ResultadoAnalisis).where(ResultadoAnalisis.estado == "recibido")
         ).all()
-        resultados_del_periodo = [
+        resultados_vigentes = [
             resultado for resultado in resultados
             if str(resultado.detalle_orden_id) in ids_detalle_periodo
-            and (not fecha_desde or resultado.fecha_recepcion.strftime("%Y-%m-%d") >= fecha_desde[:10])
+            and detalles_por_id[str(resultado.detalle_orden_id)].orden
+            and detalles_por_id[str(resultado.detalle_orden_id)].orden.created_at
+            and normalizar_fecha_utc(resultado.fecha_recepcion)
+            >= normalizar_fecha_utc(detalles_por_id[str(resultado.detalle_orden_id)].orden.created_at)
+        ]
+        resultados_del_periodo = [
+            resultado for resultado in resultados_vigentes
+            if (not fecha_desde or resultado.fecha_recepcion.strftime("%Y-%m-%d") >= fecha_desde[:10])
             and (not fecha_hasta or resultado.fecha_recepcion.strftime("%Y-%m-%d") <= fecha_hasta[:10])
         ]
-        ids_con_resultado = {str(r.detalle_orden_id) for r in resultados if str(r.detalle_orden_id) in ids_detalle_periodo}
+        ids_con_resultado = {str(r.detalle_orden_id) for r in resultados_vigentes}
         recibidos = len(ids_con_resultado)
         pendientes = len(detalles_periodo) - recibidos
         porcentaje = round(recibidos / len(detalles_periodo) * 100, 1) if detalles_periodo else None
 
         recepciones = self.db.scalars(select(RecepcionEnvio)).all()
-        recepcion_por_envio = {str(r.envio_id): r for r in recepciones}
+        recepciones_por_envio: dict[str, list[RecepcionEnvio]] = {}
+        for recepcion in recepciones:
+            recepciones_por_envio.setdefault(str(recepcion.envio_id), []).append(recepcion)
         duraciones = []
         for resultado in resultados_del_periodo:
             if not resultado.muestra_id:
@@ -72,10 +83,19 @@ class ServicioEficaciaDiagnostica:
             except (TypeError, ValueError):
                 muestra = None
             envio = muestra.envio if muestra else None
-            recepcion = recepcion_por_envio.get(str(envio.id)) if envio else None
+            recepcion = None
+            if envio:
+                recepcion = max(
+                    (
+                        registro for registro in recepciones_por_envio.get(str(envio.id), [])
+                        if recepcion_pertenece_al_envio_actual(registro, envio)
+                    ),
+                    key=lambda registro: normalizar_fecha_utc(registro.fecha_recepcion),
+                    default=None,
+                )
             if not (muestra and recepcion and str(muestra.id) in {str(x) for x in recepcion.muestras_recibidas or []}):
                 continue
-            horas = (resultado.fecha_recepcion - recepcion.fecha_recepcion).total_seconds() / 3600
+            horas = (normalizar_fecha_utc(resultado.fecha_recepcion) - normalizar_fecha_utc(recepcion.fecha_recepcion)).total_seconds() / 3600
             if horas >= 0:
                 duraciones.append(horas)
         promedio = round(sum(duraciones) / len(duraciones), 1) if duraciones else None
