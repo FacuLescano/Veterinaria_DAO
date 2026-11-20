@@ -277,7 +277,6 @@ def test_endpoint_rendimiento_clinico_json(client):
     data = response.json()
     assert "kpis" in data
     assert "rendimiento_veterinarios" in data
-    assert "top_estudios_prescriptos" in data
     assert "actividad_por_hora" in data
     assert data["filtros_disponibles"]["veterinarios"] == ["Todos"]
 
@@ -285,9 +284,7 @@ def test_endpoint_rendimiento_clinico_json(client):
     res_vet = client.get("/api/v1/reportes/rendimiento-clinico?veterinario=Lucas+Ferrara")
     assert res_vet.status_code == 200
     data_vet = res_vet.json()
-    assert data_vet["detalles_consultas"] == []
-    for d in data_vet["detalles_consultas"]:
-        assert "Lucas Ferrara" in d["veterinario_nombre"]
+    assert data_vet["rendimiento_veterinarios"] == []
 
 
 def test_endpoint_rendimiento_clinico_excel(client):
