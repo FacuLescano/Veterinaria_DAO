@@ -1,5 +1,6 @@
 import json
 import re
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from html import escape
 from math import isfinite
@@ -32,6 +33,7 @@ from app.schemas.envio import (
     RegistroTemperaturaCreate,
     VerificacionPrecintoCreate,
 )
+from app.state.estados_muestra import TransicionMuestraInvalida
 
 
 def _clave_conservacion(condicion: str) -> str | tuple[float | None, float]:
@@ -65,6 +67,18 @@ class EnvioService:
         self.envio_dao = EnvioDAO(db)
         self.conservadora_dao = ConservadoraDAO(db)
         self.muestra_dao = MuestraDAO(db)
+
+    @contextmanager
+    def _guardar_operacion_envio(self):
+        try:
+            yield
+            self.db.commit()
+        except TransicionMuestraInvalida as exc:
+            self.db.rollback()
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception:
+            self.db.rollback()
+            raise
 
     def registrar_conservadora(self, payload: ConservadoraCreate) -> Conservadora:
         codigo = payload.codigo.strip()
@@ -118,11 +132,6 @@ class EnvioService:
             muestra = self.muestra_dao.get_by_id(muestra_id)
             if not muestra:
                 raise HTTPException(status_code=404, detail=f"Muestra con ID {muestra_id} no encontrada")
-            if muestra.estado != "lista_para_envio":
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"La muestra '{muestra.codigo_etiqueta}' debe estar lista_para_envio",
-                )
             if not muestra.asociaciones_detalles:
                 raise HTTPException(
                     status_code=400,
@@ -153,40 +162,40 @@ class EnvioService:
         if not muestras:
             raise HTTPException(status_code=400, detail="El envío debe incluir al menos una muestra")
 
-        envio = Envio(
-            origen=payload.origen.strip(),
-            destino=payload.destino.strip(),
-            condiciones_empaquetado=payload.condiciones_empaquetado.strip(),
-            estado="en_preparacion",
-            observaciones=payload.observaciones.strip() if payload.observaciones else None,
-            conservadoras=conservadoras,
-        )
-        self.envio_dao.create(envio)
-        for conservadora in conservadoras:
-            conservadora.disponible = False
-        for muestra in muestras:
-            self.db.execute(
-                envio_muestras.insert().values(
+        with self._guardar_operacion_envio():
+            envio = Envio(
+                origen=payload.origen.strip(),
+                destino=payload.destino.strip(),
+                condiciones_empaquetado=payload.condiciones_empaquetado.strip(),
+                estado="en_preparacion",
+                observaciones=payload.observaciones.strip() if payload.observaciones else None,
+                conservadoras=conservadoras,
+            )
+            self.envio_dao.create(envio)
+            for conservadora in conservadoras:
+                conservadora.disponible = False
+            for muestra in muestras:
+                self.db.execute(
+                    envio_muestras.insert().values(
+                        envio_id=envio.id,
+                        muestra_id=muestra.id,
+                        conservadora_id=asignaciones[muestra.id],
+                    )
+                )
+                muestra.empaquetar(
+                    responsable=payload.responsable_preparacion,
+                    motivo=f"Empaquetada en el envío #{envio.id}",
+                )
+            self.db.add(
+                HistorialEnvio(
                     envio_id=envio.id,
-                    muestra_id=muestra.id,
-                    conservadora_id=asignaciones[muestra.id],
+                    estado_anterior=None,
+                    estado_nuevo="en_preparacion",
+                    responsable="Sistema",
+                    observaciones="Envío creado para preparación",
                 )
             )
-            muestra.empaquetar(
-                responsable=payload.responsable_preparacion,
-                motivo=f"Empaquetada en el envío #{envio.id}",
-            )
-        self.db.add(
-            HistorialEnvio(
-                envio_id=envio.id,
-                estado_anterior=None,
-                estado_nuevo="en_preparacion",
-                responsable="Sistema",
-                observaciones="Envío creado para preparación",
-            )
-        )
-        self.db.expire(envio, ["muestras"])
-        self.db.commit()
+            self.db.expire(envio, ["muestras"])
         return self._serializar_envio(envio.id)
 
     def registrar_precinto(self, envio_id: int, payload: PrecintoCreate) -> dict:
@@ -316,95 +325,88 @@ class EnvioService:
             )
 
         for muestra in envio.muestras:
-            if muestra.estado == "lista_para_envio":
-                # Compatibilidad con envíos en preparación creados antes de
-                # incorporar el estado explícito Empaquetada.
-                muestra.empaquetar(
-                    responsable=payload.responsable_despacho,
-                    motivo=f"Empaquetada en el envío #{envio.id}",
-                )
-            if muestra.estado != "empaquetada" or not muestra.asociaciones_detalles:
+            if not muestra.asociaciones_detalles:
                 raise HTTPException(
                     status_code=409,
-                    detail=f"La muestra '{muestra.codigo_etiqueta}' ya no cumple los requisitos de despacho",
+                    detail=f"La muestra '{muestra.codigo_etiqueta}' no está asociada a ningún análisis",
                 )
 
-        fecha_despacho = payload.fecha_despacho or datetime.now(timezone.utc)
-        estado_anterior = envio.estado
-        envio.estado = "despachado"
-        envio.fecha_despacho = fecha_despacho
-        envio.responsable_despacho = payload.responsable_despacho.strip()
-        envio.transportista = payload.transportista.strip()
-        if payload.observaciones:
-            observacion = payload.observaciones.strip()
-            envio.observaciones = "\n".join(filter(None, [envio.observaciones, observacion]))
+        with self._guardar_operacion_envio():
+            fecha_despacho = payload.fecha_despacho or datetime.now(timezone.utc)
+            estado_anterior = envio.estado
+            envio.estado = "despachado"
+            envio.fecha_despacho = fecha_despacho
+            envio.responsable_despacho = payload.responsable_despacho.strip()
+            envio.transportista = payload.transportista.strip()
+            if payload.observaciones:
+                observacion = payload.observaciones.strip()
+                envio.observaciones = "\n".join(filter(None, [envio.observaciones, observacion]))
 
-        contenido = {
-            "envio_id": envio.id,
-            "origen": envio.origen,
-            "destino": envio.destino,
-            "condiciones_empaquetado": envio.condiciones_empaquetado,
-            "fecha_despacho": fecha_despacho.isoformat(),
-            "responsable_despacho": envio.responsable_despacho,
-            "transportista": envio.transportista,
-            "muestras": [
-                {
-                    "id": muestra.id,
-                    "codigo_etiqueta": muestra.codigo_etiqueta,
-                    "orden_id": muestra.orden_id,
-                    "tipo_muestra": muestra.tipo_muestra.nombre,
-                    "condiciones_conservacion": muestra.condiciones_conservacion,
-                }
-                for muestra in envio.muestras
-            ],
-            "conservadoras": [
-                {
-                    "id": conservadora.id,
-                    "codigo": conservadora.codigo,
-                    "muestra_ids": self._muestras_de_conservadora(envio.id, conservadora.id),
-                    "precinto": next(
-                        p.codigo for p in envio.precintos if p.conservadora_id == conservadora.id
-                    ),
-                }
-                for conservadora in envio.conservadoras
-            ],
-        }
-        numero_remito = f"REM-{fecha_despacho:%Y%m%d}-{uuid4().hex[:8].upper()}"
-        envio.remito = Remito(
-            numero=numero_remito,
-            fecha_emision=datetime.now(timezone.utc),
-            contenido_json=json.dumps(contenido, ensure_ascii=False),
-        )
-
-        for muestra in envio.muestras:
-            muestra.despachar(
-                responsable=payload.responsable_despacho,
-                motivo=f"Despachada en remito {numero_remito}",
-                fecha_evento=fecha_despacho,
+            contenido = {
+                "envio_id": envio.id,
+                "origen": envio.origen,
+                "destino": envio.destino,
+                "condiciones_empaquetado": envio.condiciones_empaquetado,
+                "fecha_despacho": fecha_despacho.isoformat(),
+                "responsable_despacho": envio.responsable_despacho,
+                "transportista": envio.transportista,
+                "muestras": [
+                    {
+                        "id": muestra.id,
+                        "codigo_etiqueta": muestra.codigo_etiqueta,
+                        "orden_id": muestra.orden_id,
+                        "tipo_muestra": muestra.tipo_muestra.nombre,
+                        "condiciones_conservacion": muestra.condiciones_conservacion,
+                    }
+                    for muestra in envio.muestras
+                ],
+                "conservadoras": [
+                    {
+                        "id": conservadora.id,
+                        "codigo": conservadora.codigo,
+                        "muestra_ids": self._muestras_de_conservadora(envio.id, conservadora.id),
+                        "precinto": next(
+                            p.codigo for p in envio.precintos if p.conservadora_id == conservadora.id
+                        ),
+                    }
+                    for conservadora in envio.conservadoras
+                ],
+            }
+            numero_remito = f"REM-{fecha_despacho:%Y%m%d}-{uuid4().hex[:8].upper()}"
+            envio.remito = Remito(
+                numero=numero_remito,
+                fecha_emision=datetime.now(timezone.utc),
+                contenido_json=json.dumps(contenido, ensure_ascii=False),
             )
 
-        ordenes_ids = {muestra.orden_id for muestra in envio.muestras}
-        for orden_id in ordenes_ids:
-            orden = self.db.get(OrdenAnalisis, orden_id)
-            if orden and orden.estado == "en_preparacion":
-                anterior = orden.estado
-                orden.estado = "enviada"
-                self.db.add(HistorialOrdenAnalisis(
-                    orden_id=orden.id, estado_anterior=anterior, estado_nuevo="enviada",
+            for muestra in envio.muestras:
+                muestra.despachar(
+                    responsable=payload.responsable_despacho,
                     motivo=f"Despachada en remito {numero_remito}",
-                ))
+                    fecha_evento=fecha_despacho,
+                )
 
-        self.db.add(
-            HistorialEnvio(
-                envio_id=envio.id,
-                estado_anterior=estado_anterior,
-                estado_nuevo="despachado",
-                fecha_evento=fecha_despacho,
-                responsable=payload.responsable_despacho.strip(),
-                observaciones=payload.observaciones,
+            ordenes_ids = {muestra.orden_id for muestra in envio.muestras}
+            for orden_id in ordenes_ids:
+                orden = self.db.get(OrdenAnalisis, orden_id)
+                if orden and orden.estado == "en_preparacion":
+                    anterior = orden.estado
+                    orden.estado = "enviada"
+                    self.db.add(HistorialOrdenAnalisis(
+                        orden_id=orden.id, estado_anterior=anterior, estado_nuevo="enviada",
+                        motivo=f"Despachada en remito {numero_remito}",
+                    ))
+
+            self.db.add(
+                HistorialEnvio(
+                    envio_id=envio.id,
+                    estado_anterior=estado_anterior,
+                    estado_nuevo="despachado",
+                    fecha_evento=fecha_despacho,
+                    responsable=payload.responsable_despacho.strip(),
+                    observaciones=payload.observaciones,
+                )
             )
-        )
-        self.db.commit()
         return self._serializar_envio(envio_id)
 
     def registrar_temperatura(self, envio_id: int, payload: RegistroTemperaturaCreate) -> dict:
