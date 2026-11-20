@@ -24,6 +24,7 @@ import {
   REPORTE_ROUTES,
   ReporteTabId
 } from '../utils/navigation';
+import { rangoConservacion } from '../utils/conservacion';
 
 export type ActiveModule = 'pacientes' | 'ordenes' | 'despacho' | 'recepcion' | 'notificaciones' | 'reportes' | 'python';
 
@@ -75,6 +76,7 @@ interface VeterinariaContextType {
   addConsulta: (consulta: Omit<ConsultaMedica, 'id'>) => Promise<ConsultaMedica>;
   createOrden: (orden: Omit<OrdenAnalisis, 'id'>) => Promise<OrdenAnalisis>;
   registrarMuestra: (muestra: ExtraccionMuestra) => Promise<MuestraBiologica>;
+  consultarMuestraConHistorial: (id: string, signal: AbortSignal) => Promise<MuestraBiologica>;
   vincularMuestraConAnalisis: (ordenId: string, detalleId: string, muestraId: string) => Promise<void>;
   prepararEnvio: (params: {
     conservadoraId: string;
@@ -84,7 +86,8 @@ interface VeterinariaContextType {
     muestrasIds: string[];
     temperaturaDespachoC: number;
     observaciones?: string;
-  }) => Promise<RemitoBiologico>;
+  }) => Promise<RemitoBiologico | null>;
+  despachoEnCurso: boolean;
   verificarPrecintoYRecepcion: (params: {
     remitoId: string;
     estadoPrecinto: EstadoPrecinto;
@@ -121,20 +124,45 @@ async function api<T = any>(path: string, init?: RequestInit): Promise<T> {
 const estadoTitulo = (value: string | undefined) => (value || '').replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 const fechaLocal = (value: string | undefined) => value ? value.replace('T', ' ').slice(0, 16) : '';
 
+const estadosTrazabilidad: Record<string, EstadoMuestra> = {
+  extraida: 'Extraída',
+  pendiente_preparacion: 'Pendiente de preparación',
+  lista_para_envio: 'Lista para envío',
+  empaquetada: 'Empaquetada',
+  enviada: 'En tránsito',
+  en_transito: 'En tránsito',
+  recibida: 'Recibida',
+  analizada: 'Analizada',
+  rechazada: 'Rechazada',
+  con_inconveniente: 'Con inconveniente',
+};
+
+const estadosResumenMuestra: Record<string, EstadoMuestra> = {
+  ...estadosTrazabilidad,
+  pendiente_preparacion: 'Extraída',
+  lista_para_envio: 'Extraída',
+  con_inconveniente: 'Rechazada',
+};
+
 function mapMuestra(m: any, envio?: any): MuestraBiologica {
-  const estados: Record<string, EstadoMuestra> = {
-    extraida: 'Extraída', pendiente_preparacion: 'Extraída', lista_para_envio: 'Extraída', empaquetada: 'Empaquetada', enviada: 'En tránsito', en_transito: 'En tránsito', recibida: 'Recibida', analizada: 'Analizada', rechazada: 'Rechazada', con_inconveniente: 'Rechazada',
-  };
+  const condicionConservacion = ['Congelada (-20°C)', 'Congelada (menos de -20°C)'].includes(m.condiciones_conservacion)
+    ? 'Congelada (-20°C o menos)'
+    : m.condiciones_conservacion;
   return {
     id: String(m.id), ordenId: String(m.orden_id), identificacionFisica: m.codigo_etiqueta,
     tipoMaterial: m.tipo_muestra?.nombre || '', fechaHoraExtraccion: fechaLocal(m.fecha_extraccion),
-    responsableExtraccion: m.responsable_extraccion, condicionConservacion: m.condiciones_conservacion,
-    estadoActual: estados[m.estado] || 'Extraída', conservadoraId: envio ? String(envio.conservadoras?.[0]?.conservadora?.id || '') : undefined,
+    responsableExtraccion: m.responsable_extraccion, condicionConservacion,
+    estadoActual: estadosResumenMuestra[m.estado] || 'Extraída', conservadoraId: envio ? String(envio.conservadoras?.[0]?.conservadora?.id || '') : undefined,
     remitoId: envio?.remito?.numero, historialTrazabilidad: (m.historial || []).map((h: any) => ({
-      id: String(h.id), fechaHora: fechaLocal(h.changed_at), estadoAnterior: h.estado_anterior ? estados[h.estado_anterior] : undefined,
-      estadoNuevo: estados[h.estado_nuevo] || 'Extraída', responsable: h.responsable || '', ubicacion: '', observaciones: h.motivo || '',
+      id: String(h.id), fechaHora: fechaLocal(h.changed_at), estadoAnterior: h.estado_anterior ? estadosTrazabilidad[h.estado_anterior] : undefined,
+      estadoNuevo: estadosTrazabilidad[h.estado_nuevo] || 'Extraída', responsable: h.responsable || '', ubicacion: '', observaciones: h.motivo || '',
     })), observaciones: m.observaciones_calidad,
   };
+}
+
+async function consultarMuestraConHistorial(id: string, signal: AbortSignal): Promise<MuestraBiologica> {
+  const muestra = await api(`/api/v1/muestras/${encodeURIComponent(id)}`, { signal, cache: 'no-store' });
+  return { ...mapMuestra(muestra), estadoActual: estadosTrazabilidad[muestra.estado] || 'Extraída' };
 }
 
 function mapOrden(o: any): OrdenAnalisis {
@@ -179,6 +207,8 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [remitos, setRemitos] = useState<RemitoBiologico[]>([]);
   const [incidencias, setIncidencias] = useState<Incidencia[]>([]);
   const [resultados, setResultados] = useState<ResultadoAnalisis[]>([]);
+  const [despachoEnCurso, setDespachoEnCurso] = useState(false);
+  const despachoEnCursoRef = useRef(false);
 
   // UI & Navigation state sincronizado con URL
   const initialRoute = parseCurrentRoute();
@@ -536,31 +566,54 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
     muestrasIds: string[];
     temperaturaDespachoC: number;
     observaciones?: string;
-  }): Promise<RemitoBiologico> => {
-    const envio = await api<any>('/api/v1/envios', { method: 'POST', body: JSON.stringify({
-      origen: 'Clínica Veterinaria Patitas & Co. - Sede Central', destino: 'Laboratorio Central de Derivación BioVet',
-      condiciones_empaquetado: params.observaciones || 'Muestras protegidas y refrigeradas', responsable_preparacion: params.responsableDespacho,
-      conservadoras: [{ conservadora_id: Number(params.conservadoraId), muestra_ids: params.muestrasIds.map(Number) }], observaciones: params.observaciones,
-    }) });
-    const conPrecinto = await api<any>(`/api/v1/envios/${envio.id}/precintos`, { method: 'POST', body: JSON.stringify({ codigo: params.precintoCodigo, conservadora_id: Number(params.conservadoraId), colocado_por: params.responsableDespacho }) });
-    const despachado = await api<any>(`/api/v1/envios/${envio.id}/despachar`, { method: 'POST', body: JSON.stringify({ responsable_despacho: params.responsableDespacho, transportista: params.transportista }) });
-    await api(`/api/v1/envios/${envio.id}/temperaturas`, { method: 'POST', body: JSON.stringify({ conservadora_id: Number(params.conservadoraId), temperatura_requerida_c: 4, temperatura_medida_c: params.temperaturaDespachoC, fecha_medicion: new Date().toISOString(), responsable: params.responsableDespacho, observaciones: params.observaciones }) });
-    const nuevoRemito = mapEnvio({ ...despachado, precintos: conPrecinto.precintos }, false, []);
-    nuevoRemito.estado = 'Despachado';
-    const now = new Date().toISOString().replace('T', ' ').substring(0, 16);
-    setPrecintos(prev => [{ id: String(despachado.precintos?.[0]?.id || ''), codigoUnico: params.precintoCodigo, conservadoraId: params.conservadoraId, colocadoPor: params.responsableDespacho, fechaHoraColocacion: now }, ...prev]);
-    setRemitos(prev => [nuevoRemito, ...prev]);
-    setConservadoras(prev => prev.map(c => c.id === params.conservadoraId ? { ...c, disponible: false } : c));
-    setMuestras(prev => prev.map(m => params.muestrasIds.includes(m.id) ? { ...m, estadoActual: 'En tránsito', conservadoraId: params.conservadoraId, remitoId: String(envio.id) } : m));
-    setOrdenes(prev => prev.map(o => params.muestrasIds.some(id => o.detalles.some(d => d.muestraAsociadaId === id)) ? { ...o, estado: 'Enviada' } : o));
+  }): Promise<RemitoBiologico | null> => {
+    if (despachoEnCursoRef.current) return null;
 
-    showToast({
-      type: 'success',
-      title: 'Envío despachado con éxito',
-      description: `Remito ${nuevoRemito.numeroRemito || nuevoRemito.id} generado con ${params.muestrasIds.length} muestras. Precinto ${params.precintoCodigo}.`
-    });
+    despachoEnCursoRef.current = true;
+    setDespachoEnCurso(true);
+    try {
+      const envio = await api<any>('/api/v1/envios', { method: 'POST', body: JSON.stringify({
+        origen: 'Clínica Veterinaria Patitas & Co. - Sede Central', destino: 'Laboratorio Central de Derivación BioVet',
+        condiciones_empaquetado: params.observaciones || 'Muestras protegidas según sus condiciones de conservación', responsable_preparacion: params.responsableDespacho,
+        conservadoras: [{ conservadora_id: Number(params.conservadoraId), muestra_ids: params.muestrasIds.map(Number) }], observaciones: params.observaciones,
+      }) });
+      const rango = rangoConservacion(envio.muestras[0].condiciones_conservacion);
+      const objetivo = rango?.[0] === 2 && rango[1] === 8
+        ? 4
+        : rango && rango[0] === rango[1] ? rango[0] : null;
+      await api(`/api/v1/envios/${envio.id}/temperaturas`, {
+        method: 'POST',
+        body: JSON.stringify({
+          conservadora_id: Number(params.conservadoraId),
+          temperatura_requerida_c: objetivo,
+          temperatura_medida_c: params.temperaturaDespachoC,
+          fecha_medicion: new Date().toISOString(),
+          responsable: params.responsableDespacho,
+          observaciones: params.observaciones
+        }),
+      });
+      await api(`/api/v1/envios/${envio.id}/precintos`, { method: 'POST', body: JSON.stringify({ codigo: params.precintoCodigo, conservadora_id: Number(params.conservadoraId), colocado_por: params.responsableDespacho }) });
+      const despachado = await api<any>(`/api/v1/envios/${envio.id}/despachar`, { method: 'POST', body: JSON.stringify({ responsable_despacho: params.responsableDespacho, transportista: params.transportista }) });
+      const nuevoRemito = mapEnvio(despachado, false, []);
+      nuevoRemito.estado = 'Despachado';
+      const precinto = despachado.precintos[0];
+      setPrecintos(prev => [{ id: String(precinto.id), codigoUnico: precinto.codigo, conservadoraId: params.conservadoraId, colocadoPor: precinto.colocado_por, fechaHoraColocacion: fechaLocal(precinto.fecha_colocacion) }, ...prev]);
+      setRemitos(prev => [nuevoRemito, ...prev]);
+      setConservadoras(prev => prev.map(c => c.id === params.conservadoraId ? { ...c, disponible: false } : c));
+      setMuestras(prev => prev.map(m => params.muestrasIds.includes(m.id) ? { ...m, estadoActual: 'En tránsito', conservadoraId: params.conservadoraId, remitoId: String(envio.id) } : m));
+      setOrdenes(prev => prev.map(o => params.muestrasIds.some(id => o.detalles.some(d => d.muestraAsociadaId === id)) ? { ...o, estado: 'Enviada' } : o));
 
-    return nuevoRemito;
+      showToast({
+        type: 'success',
+        title: 'Envío despachado con éxito',
+        description: `Remito ${nuevoRemito.numeroRemito || nuevoRemito.id} generado con ${params.muestrasIds.length} muestras. Precinto ${params.precintoCodigo}.`
+      });
+
+      return nuevoRemito;
+    } finally {
+      despachoEnCursoRef.current = false;
+      setDespachoEnCurso(false);
+    }
   };
 
   const verificarPrecintoYRecepcion = async (params: {
@@ -804,8 +857,10 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
         addConsulta,
         createOrden,
         registrarMuestra,
+        consultarMuestraConHistorial,
         vincularMuestraConAnalisis,
         prepararEnvio,
+        despachoEnCurso,
         verificarPrecintoYRecepcion,
         registrarResultado,
         recibirResultadosLaboratorio,

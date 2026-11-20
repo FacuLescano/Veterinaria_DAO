@@ -82,7 +82,8 @@ class Envio(Base):
         back_populates="envio", cascade="all, delete-orphan", order_by="HistorialEnvio.fecha_evento"
     )
     registros_temperatura: Mapped[list["RegistroTemperatura"]] = relationship(
-        back_populates="envio", cascade="all, delete-orphan"
+        back_populates="envio", cascade="all, delete-orphan",
+        order_by="(RegistroTemperatura.fecha_medicion, RegistroTemperatura.id)",
     )
     incidencias: Mapped[list["IncidenciaTransporte"]] = relationship(
         back_populates="envio", cascade="all, delete-orphan"

@@ -1,6 +1,8 @@
 import json
+import re
 from datetime import datetime, timezone
 from html import escape
+from math import isfinite
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -30,6 +32,31 @@ from app.schemas.envio import (
     RegistroTemperaturaCreate,
     VerificacionPrecintoCreate,
 )
+
+
+def _clave_conservacion(condicion: str) -> str | tuple[float | None, float]:
+    texto = " ".join(condicion.lower().replace("º", "°").replace("−", "-").split())
+    if texto in {"temperatura ambiente", "estándar a temperatura ambiente"}:
+        return 15.0, 25.0
+    if texto in {"congelada (-20°c o menos)", "congelada (menos de -20°c)"}:
+        return None, -20.0
+    temperatura = r"(-?[0-9]+(?:[.,][0-9]+)?)"
+    coincidencia = re.fullmatch(
+        rf"(?:refrigerad[ao] |refrigerar a |congelad[ao] |temperatura ambiente )?\(? *{temperatura}"
+        rf"(?: *(?:° *c?)? *(?:a|y|[-–—]) *{temperatura})? *° *c *\)?",
+        texto,
+    )
+    if coincidencia is None:
+        return texto
+    minima, maxima = coincidencia.groups()
+    desde = float(minima.replace(",", "."))
+    hasta = float((maxima or minima).replace(",", "."))
+    if not (isfinite(desde) and isfinite(hasta) and desde <= hasta):
+        return texto
+    # Las muestras ya registradas con la opción anterior comparten el mismo límite.
+    if maxima is None and desde == -20 and texto.startswith(("congelada ", "congelado ")):
+        return None, -20.0
+    return desde, hasta
 
 
 class EnvioService:
@@ -62,6 +89,7 @@ class EnvioService:
 
         asignaciones: dict[int, int] = {}
         conservadoras = []
+        codigos_conservadoras: dict[int, str] = {}
         for contenido in payload.conservadoras:
             conservadora = self.conservadora_dao.get_by_id(contenido.conservadora_id)
             if not conservadora:
@@ -75,6 +103,7 @@ class EnvioService:
                     detail=f"La conservadora '{conservadora.codigo}' no está disponible",
                 )
             conservadoras.append(conservadora)
+            codigos_conservadoras[conservadora.id] = conservadora.codigo
             for muestra_id in contenido.muestra_ids:
                 if muestra_id in asignaciones:
                     raise HTTPException(
@@ -84,7 +113,8 @@ class EnvioService:
                 asignaciones[muestra_id] = conservadora.id
 
         muestras = []
-        for muestra_id in asignaciones:
+        condiciones_por_conservadora: dict[int, Muestra] = {}
+        for muestra_id, conservadora_id in asignaciones.items():
             muestra = self.muestra_dao.get_by_id(muestra_id)
             if not muestra:
                 raise HTTPException(status_code=404, detail=f"Muestra con ID {muestra_id} no encontrada")
@@ -107,6 +137,16 @@ class EnvioService:
                 raise HTTPException(
                     status_code=409,
                     detail=f"La muestra '{muestra.codigo_etiqueta}' ya pertenece a un envío",
+                )
+            primera_muestra = condiciones_por_conservadora.setdefault(conservadora_id, muestra)
+            if _clave_conservacion(muestra.condiciones_conservacion) != _clave_conservacion(primera_muestra.condiciones_conservacion):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"La conservadora '{codigos_conservadoras[conservadora_id]}' solo admite muestras "
+                        f"con la misma condición de conservación. Separá "
+                        f"'{primera_muestra.condiciones_conservacion}' y '{muestra.condiciones_conservacion}'."
+                    ),
                 )
             muestras.append(muestra)
 
@@ -369,9 +409,39 @@ class EnvioService:
 
     def registrar_temperatura(self, envio_id: int, payload: RegistroTemperaturaCreate) -> dict:
         envio = self._get_envio_model(envio_id)
-        if envio.estado != "despachado":
-            raise HTTPException(status_code=409, detail="Las mediciones se registran durante el traslado")
+        if envio.estado != "en_preparacion":
+            raise HTTPException(status_code=409, detail="La temperatura de salida se registra durante la preparación del envío")
         self._validar_referencias_transporte(envio, payload.conservadora_id, payload.muestra_id)
+        if any(precinto.conservadora_id == payload.conservadora_id for precinto in envio.precintos):
+            raise HTTPException(status_code=409, detail="Registrá la temperatura de salida antes de colocar el precinto")
+
+        muestra_ids = set(self._muestras_de_conservadora(envio.id, payload.conservadora_id))
+        if not muestra_ids:
+            raise HTTPException(status_code=400, detail="La conservadora no tiene muestras asignadas")
+        for muestra in envio.muestras:
+            if muestra.id not in muestra_ids:
+                continue
+            rango = _clave_conservacion(muestra.condiciones_conservacion)
+            if isinstance(rango, str):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"La muestra '{muestra.codigo_etiqueta}' necesita una condición de conservación con temperatura definida.",
+                )
+            minima, maxima = rango
+            temperatura = payload.temperatura_medida_c
+            compatible = temperatura <= maxima and (minima is None or minima <= temperatura)
+            if not compatible:
+                if minima is None:
+                    requisito = f"de {maxima:g} °C o menos"
+                elif minima == maxima:
+                    requisito = f"{minima:g} °C"
+                else:
+                    requisito = f"entre {minima:g} y {maxima:g} °C"
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"La temperatura de salida debe ser {requisito} para la muestra '{muestra.codigo_etiqueta}'.",
+                )
+
         envio.registros_temperatura.append(
             RegistroTemperatura(
                 conservadora_id=payload.conservadora_id,

@@ -30,6 +30,11 @@ const extraccionInicial = {
   observaciones: ''
 };
 
+type ConsultaHistorial =
+  | { estado: 'cargando' }
+  | { estado: 'listo'; muestra: MuestraBiologica }
+  | { estado: 'error'; mensaje: string };
+
 export const Modulo2OrdenesMuestras: React.FC = () => {
   const {
     ordenes,
@@ -38,13 +43,16 @@ export const Modulo2OrdenesMuestras: React.FC = () => {
     consultas,
     createOrden,
     registrarMuestra,
+    consultarMuestraConHistorial,
     vincularMuestraConAnalisis,
     setActiveModule,
     showToast
   } = useVeterinaria();
 
   const [activeTab, setActiveTab] = useState<'ordenes' | 'muestras'>('ordenes');
-  const [selectedMuestraForTimeline, setSelectedMuestraForTimeline] = useState<MuestraBiologica | null>(null);
+  const [muestraHistorialId, setMuestraHistorialId] = useState<string | null>(null);
+  const [consultaHistorial, setConsultaHistorial] = useState<ConsultaHistorial>({ estado: 'cargando' });
+  const selectedMuestraForTimeline = consultaHistorial.estado === 'listo' ? consultaHistorial.muestra : null;
 
   // Modals
   const [isNewOrdenModalOpen, setIsNewOrdenModalOpen] = useState(false);
@@ -74,6 +82,24 @@ export const Modulo2OrdenesMuestras: React.FC = () => {
   useEffect(() => {
     if (mascotas.length && !mascotas.some((m) => m.id === newOrdenData.mascotaId)) setNewOrdenData((d) => ({ ...d, mascotaId: mascotas[0].id }));
   }, [mascotas, newOrdenData.mascotaId]);
+
+  useEffect(() => {
+    if (muestraHistorialId === null) return;
+    const consulta = new AbortController();
+    consultarMuestraConHistorial(muestraHistorialId, consulta.signal)
+      .then(muestra => {
+        if (!consulta.signal.aborted) setConsultaHistorial({ estado: 'listo', muestra });
+      })
+      .catch((error: unknown) => {
+        if (!consulta.signal.aborted) {
+          setConsultaHistorial({
+            estado: 'error',
+            mensaje: error instanceof Error ? error.message : 'No se pudo cargar el historial de la muestra.',
+          });
+        }
+      });
+    return () => consulta.abort();
+  }, [muestraHistorialId, consultarMuestraConHistorial]);
 
   const muestrasParaVincular = muestras.filter(m => m.ordenId === vincularData.ordenId && m.estadoActual === 'Extraída');
 
@@ -400,11 +426,14 @@ export const Modulo2OrdenesMuestras: React.FC = () => {
                         </td>
                         <td className="py-3 px-4 text-right whitespace-nowrap">
                           <button
-                            onClick={() => setSelectedMuestraForTimeline(m)}
+                            onClick={() => {
+                              setConsultaHistorial({ estado: 'cargando' });
+                              setMuestraHistorialId(m.id);
+                            }}
                             className="px-2.5 py-1 text-xs font-semibold text-[#2D5864] hover:bg-[#FAF6EF] border border-[#2D5864]/20 rounded-md transition-colors inline-flex items-center gap-1"
                           >
                             <History className="w-3.5 h-3.5" />
-                            <span>Ver Historial ({m.historialTrazabilidad.length})</span>
+                            <span>Ver historial</span>
                           </button>
                         </td>
                       </tr>
@@ -586,7 +615,7 @@ export const Modulo2OrdenesMuestras: React.FC = () => {
                 className="w-full p-2 bg-white border border-[#E7E2DA] rounded-lg"
               >
                 <option value="Refrigerada (2° a 8°C)">Refrigerada (2° a 8°C)</option>
-                <option value="Congelada (-20°C)">Congelada (-20°C)</option>
+                <option value="Congelada (-20°C o menos)">Congelada (-20°C o menos)</option>
                 <option value="Temperatura Ambiente (15° a 25°C)">Temperatura Ambiente (15° a 25°C)</option>
               </select>
             </div>
@@ -691,59 +720,74 @@ export const Modulo2OrdenesMuestras: React.FC = () => {
       </Modal>
 
       {/* MODAL: HISTORIAL DE TRAZABILIDAD INMUTABLE */}
-      {selectedMuestraForTimeline && (
+      {muestraHistorialId !== null && (
         <Modal
-          isOpen={!!selectedMuestraForTimeline}
-          onClose={() => setSelectedMuestraForTimeline(null)}
-          title={`Cadena de Custodia: ${selectedMuestraForTimeline.id}`}
-          subtitle={`Rótulo: ${selectedMuestraForTimeline.identificacionFisica} · ${selectedMuestraForTimeline.tipoMaterial}`}
+          isOpen
+          onClose={() => setMuestraHistorialId(null)}
+          title={`Cadena de Custodia: ${muestraHistorialId}`}
+          subtitle={selectedMuestraForTimeline
+            ? `Rótulo: ${selectedMuestraForTimeline.identificacionFisica} · ${selectedMuestraForTimeline.tipoMaterial}`
+            : undefined}
           maxWidth="lg"
         >
           <div className="space-y-4 text-xs">
-            {/* Sample summary */}
-            <div className="p-3 bg-[#FAF8F5] rounded-xl border border-[#F2E8D8] flex items-center justify-between">
-              <div>
-                <span className="text-neutral-400 block text-[11px]">Condición Térmica:</span>
-                <span className="font-semibold text-neutral-800">{selectedMuestraForTimeline.condicionConservacion}</span>
-              </div>
-              <div className="text-right">
-                <span className="text-neutral-400 block text-[11px]">Estado Actual:</span>
-                <span className="font-bold text-[#2D5864] font-mono">{selectedMuestraForTimeline.estadoActual}</span>
-              </div>
-            </div>
-
-            {/* Timeline */}
-            <div className="relative pl-6 space-y-4 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-[#E7E2DA]">
-              {selectedMuestraForTimeline.historialTrazabilidad.map((evento, idx) => (
-                <div key={evento.id} className="relative group">
-                  <div className="absolute -left-6 top-1 w-4 h-4 rounded-full bg-white border-2 border-[#2D5864] flex items-center justify-center">
-                    <div className="w-1.5 h-1.5 rounded-full bg-[#2D5864]" />
+            {consultaHistorial.estado === 'cargando' && (
+              <p role="status" className="text-neutral-600">Cargando historial…</p>
+            )}
+            {consultaHistorial.estado === 'error' && (
+              <p role="alert" className="text-rose-700">{consultaHistorial.mensaje}</p>
+            )}
+            {selectedMuestraForTimeline && (
+              <>
+                {/* Sample summary */}
+                <div className="p-3 bg-[#FAF8F5] rounded-xl border border-[#F2E8D8] flex items-center justify-between">
+                  <div>
+                    <span className="text-neutral-400 block text-[11px]">Condición Térmica:</span>
+                    <span className="font-semibold text-neutral-800">{selectedMuestraForTimeline.condicionConservacion}</span>
                   </div>
-                  <div className="p-3 bg-white border border-neutral-200 rounded-lg space-y-1">
-                    <div className="flex items-center justify-between font-mono text-[11px] text-neutral-500">
-                      <span>{evento.fechaHora}</span>
-                      <span className="font-semibold text-[#2D5864]">{evento.estadoNuevo}</span>
-                    </div>
-                    <div className="text-neutral-800 font-medium">
-                      {evento.ubicacion}
-                    </div>
-                    <div className="text-neutral-500 text-[11px]">
-                      Responsable: {evento.responsable}
-                    </div>
-                    {evento.observaciones && (
-                      <p className="text-neutral-600 text-[11px] pt-1 border-t border-neutral-100">
-                        {evento.observaciones}
-                      </p>
-                    )}
+                  <div className="text-right">
+                    <span className="text-neutral-400 block text-[11px]">Estado Actual:</span>
+                    <span className="font-bold text-[#2D5864] font-mono">{selectedMuestraForTimeline.estadoActual}</span>
                   </div>
                 </div>
-              ))}
-            </div>
+
+                {/* Timeline */}
+                <div className="relative pl-6 space-y-4 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-[#E7E2DA]">
+                  {selectedMuestraForTimeline.historialTrazabilidad.map(evento => (
+                    <div key={evento.id} className="relative group">
+                      <div className="absolute -left-6 top-1 w-4 h-4 rounded-full bg-white border-2 border-[#2D5864] flex items-center justify-center">
+                        <div className="w-1.5 h-1.5 rounded-full bg-[#2D5864]" />
+                      </div>
+                      <div className="p-3 bg-white border border-neutral-200 rounded-lg space-y-1">
+                        <div className="flex items-center justify-between font-mono text-[11px] text-neutral-500">
+                          <span>{evento.fechaHora}</span>
+                          <span className="font-semibold text-[#2D5864]">{evento.estadoNuevo}</span>
+                        </div>
+                        <div className="text-neutral-800 font-medium">
+                          {evento.ubicacion}
+                        </div>
+                        <div className="text-neutral-500 text-[11px]">
+                          Responsable: {evento.responsable}
+                        </div>
+                        {evento.observaciones && (
+                          <p className="text-neutral-600 text-[11px] pt-1 border-t border-neutral-100">
+                            {evento.observaciones}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {selectedMuestraForTimeline.historialTrazabilidad.length === 0 && (
+                  <p className="text-neutral-600">Esta muestra aún no tiene cambios de estado registrados.</p>
+                )}
+              </>
+            )}
 
             <div className="pt-2 flex justify-end">
               <button
                 type="button"
-                onClick={() => setSelectedMuestraForTimeline(null)}
+                onClick={() => setMuestraHistorialId(null)}
                 className="px-4 py-2 font-medium text-neutral-600 hover:text-neutral-900 border border-neutral-200 rounded-lg"
               >
                 Cerrar

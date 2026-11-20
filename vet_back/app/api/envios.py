@@ -98,7 +98,7 @@ def despachar_envio(
     "/envios/{envio_id}/temperaturas",
     response_model=EnvioRead,
     status_code=status.HTTP_201_CREATED,
-    summary="US-16: Registrar una medición de temperatura del traslado",
+    summary="Registrar la temperatura de salida antes de colocar el precinto",
 )
 def registrar_temperatura(
     envio_id: int,

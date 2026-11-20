@@ -92,15 +92,18 @@ export type TipoMaterialBiologico =
   | 'Biopsia / Tejido en formol'
   | 'Raspado cutáneo';
 
-export type CondicionConservacion = 'Refrigerada (2° a 8°C)' | 'Congelada (-20°C)' | 'Temperatura Ambiente (15° a 25°C)';
+export type CondicionConservacion = 'Refrigerada (2° a 8°C)' | 'Congelada (-20°C o menos)' | 'Temperatura Ambiente (15° a 25°C)';
 
 export type EstadoMuestra = 
   | 'Extraída'
+  | 'Pendiente de preparación'
+  | 'Lista para envío'
   | 'Empaquetada'
   | 'En tránsito'
   | 'Recibida'
   | 'Analizada'
-  | 'Rechazada';
+  | 'Rechazada'
+  | 'Con inconveniente';
 
 export interface EventoTrazabilidad {
   id: string;

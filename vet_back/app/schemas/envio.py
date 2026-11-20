@@ -124,23 +124,30 @@ class VerificacionPrecintoRead(BaseModel):
 
 
 class RegistroTemperaturaCreate(BaseModel):
-    conservadora_id: int | None = None
+    conservadora_id: int
     muestra_id: int | None = None
     temperatura_requerida_c: float | None = None
-    temperatura_medida_c: float
+    temperatura_medida_c: float = Field(allow_inf_nan=False, strict=True)
     unidad: str = Field(default="°C", min_length=1, max_length=12)
     fecha_medicion: datetime
     responsable: str = Field(..., min_length=1, max_length=160)
     dispositivo: str | None = Field(default=None, max_length=160)
     observaciones: str | None = None
 
-    @field_validator("responsable", "unidad")
+    @field_validator("responsable")
     @classmethod
     def limpiar_medicion(cls, value: str) -> str:
         value = value.strip()
         if not value:
             raise ValueError("El campo no puede estar vacío")
         return value
+
+    @field_validator("unidad")
+    @classmethod
+    def validar_unidad_celsius(cls, value: str) -> str:
+        if value.strip().upper().replace("º", "°") not in {"°C", "C"}:
+            raise ValueError("La temperatura de salida se registra en grados Celsius.")
+        return "°C"
 
 
 class RegistroTemperaturaRead(BaseModel):

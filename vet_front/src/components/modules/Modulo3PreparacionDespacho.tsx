@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useVeterinaria } from '../../context/VeterinariaContext';
 import { RemitoBiologico, MuestraBiologica } from '../../types/veterinaria';
+import { claveConservacion, rangoConservacion } from '../../utils/conservacion';
 import { Modal } from '../common/Modal';
 import { RemitoPrintModal } from '../common/RemitoPrintModal';
 import { 
@@ -24,6 +25,7 @@ export const Modulo3PreparacionDespacho: React.FC = () => {
     precintos,
     mascotas,
     prepararEnvio,
+    despachoEnCurso,
     ordenes,
     showToast
   } = useVeterinaria();
@@ -38,8 +40,8 @@ export const Modulo3PreparacionDespacho: React.FC = () => {
     responsableDespacho: 'Enf. Juan Méndez',
     transportista: 'Transportes BioLog (Roberto Gómez)',
     selectedMuestrasIds: [] as string[],
-    temperaturaDespachoC: 4.5,
-    observaciones: 'Cadena de frío mantenida con geles eutécticos congelados.'
+    temperaturaDespachoC: '',
+    observaciones: ''
   });
 
   useEffect(() => {
@@ -49,37 +51,69 @@ export const Modulo3PreparacionDespacho: React.FC = () => {
 
   // Muestras that are ready to be packed (Extraída state)
   const muestrasListasParaEmpacar = muestras.filter(m => m.estadoActual === 'Extraída' && ordenes.some(o => o.detalles.some(d => d.muestraAsociadaId === m.id)));
+  const muestrasSeleccionadas = muestrasListasParaEmpacar.filter(m => formData.selectedMuestrasIds.includes(m.id));
+  const condicionSeleccionada = muestrasSeleccionadas[0]?.condicionConservacion;
+  const claveSeleccionada = condicionSeleccionada !== undefined ? claveConservacion(condicionSeleccionada) : undefined;
+  const seleccionValida = muestrasSeleccionadas.length > 0 &&
+    muestrasSeleccionadas.length === formData.selectedMuestrasIds.length &&
+    muestrasSeleccionadas.every(m => claveConservacion(m.condicionConservacion) === claveSeleccionada);
+  const rango = condicionSeleccionada === undefined ? null : rangoConservacion(condicionSeleccionada);
+  const hayTemperatura = formData.temperaturaDespachoC.trim() !== '';
+  const temperatura = Number(formData.temperaturaDespachoC);
+  const temperaturaValida = rango !== null && hayTemperatura && Number.isFinite(temperatura) &&
+    (rango[0] === null || temperatura >= rango[0]) && temperatura <= rango[1];
+  const errorTemperatura = seleccionValida && (rango === null || (hayTemperatura && !temperaturaValida));
+  let requisitoTemperatura = 'Las muestras seleccionadas necesitan una condición de conservación con temperatura definida.';
+  if (rango !== null) {
+    const [minima, maxima] = rango;
+    if (minima === null) {
+      requisitoTemperatura = `Ingresá una temperatura de ${maxima} °C o menos.`;
+    } else if (minima === maxima) {
+      requisitoTemperatura = `Temperatura requerida: ${minima} °C.`;
+    } else {
+      requisitoTemperatura = `Rango permitido: ${minima} a ${maxima} °C.`;
+    }
+  }
 
-  const handleToggleMuestra = (id: string) => {
-    setFormData(prev => ({
-      ...prev,
-      selectedMuestrasIds: prev.selectedMuestrasIds.includes(id)
-        ? prev.selectedMuestrasIds.filter(mId => mId !== id)
-        : [...prev.selectedMuestrasIds, id]
-    }));
+  const handleToggleMuestra = (muestra: MuestraBiologica) => {
+    setFormData(prev => {
+      const ids = prev.selectedMuestrasIds;
+      if (ids.includes(muestra.id)) {
+        return { ...prev, selectedMuestrasIds: ids.filter(id => id !== muestra.id) };
+      }
+      const primera = muestrasListasParaEmpacar.find(m => ids.includes(m.id));
+      if (primera && claveConservacion(primera.condicionConservacion) !== claveConservacion(muestra.condicionConservacion)) {
+        return prev;
+      }
+      return { ...prev, selectedMuestrasIds: [...ids, muestra.id] };
+    });
   };
 
   const handleCreateDespacho = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (formData.selectedMuestrasIds.length === 0) return;
+    if (despachoEnCurso || !seleccionValida || !temperaturaValida) return;
 
     try {
-    const nuevoRemito = await prepararEnvio({
-      conservadoraId: formData.conservadoraId,
-      precintoCodigo: formData.precintoCodigo,
-      responsableDespacho: formData.responsableDespacho,
-      transportista: formData.transportista,
-      muestrasIds: formData.selectedMuestrasIds,
-      temperaturaDespachoC: Number(formData.temperaturaDespachoC),
-      observaciones: formData.observaciones
-    });
+      const nuevoRemito = await prepararEnvio({
+        conservadoraId: formData.conservadoraId,
+        precintoCodigo: formData.precintoCodigo,
+        responsableDespacho: formData.responsableDespacho,
+        transportista: formData.transportista,
+        muestrasIds: formData.selectedMuestrasIds,
+        temperaturaDespachoC: temperatura,
+        observaciones: formData.observaciones
+      });
+      if (!nuevoRemito) return;
 
-    setIsNewDespachoModalOpen(false);
-    // Open printable remito view immediately for convenience
-    setSelectedRemitoForPrint(nuevoRemito);
+      setIsNewDespachoModalOpen(false);
+      setSelectedRemitoForPrint(nuevoRemito);
     } catch (error) {
       showToast({ type: 'error', title: 'No se pudo despachar el envío', description: error instanceof Error ? error.message : 'Verificá muestras listas, precinto y conservadora.' });
     }
+  };
+
+  const cerrarPreparacion = () => {
+    if (!despachoEnCurso) setIsNewDespachoModalOpen(false);
   };
 
   return (
@@ -98,16 +132,19 @@ export const Modulo3PreparacionDespacho: React.FC = () => {
         </div>
 
         <button
+          disabled={despachoEnCurso}
           onClick={() => {
-            // Pre-select all ready samples by default
+            const condiciones = new Set(muestrasListasParaEmpacar.map(m => claveConservacion(m.condicionConservacion)));
             setFormData(prev => ({
               ...prev,
               precintoCodigo: `PREC-${Math.floor(10000 + Math.random() * 90000)}`,
-              selectedMuestrasIds: muestrasListasParaEmpacar.map(m => m.id)
+              selectedMuestrasIds: condiciones.size === 1 ? muestrasListasParaEmpacar.map(m => m.id) : [],
+              temperaturaDespachoC: '',
+              observaciones: ''
             }));
             setIsNewDespachoModalOpen(true);
           }}
-          className="px-3.5 py-2 text-xs font-semibold text-white bg-[#2D5864] hover:bg-[#23454f] rounded-lg transition-colors flex items-center gap-1.5 shadow-xs whitespace-nowrap self-start sm:self-auto"
+          className="px-3.5 py-2 text-xs font-semibold text-white bg-[#2D5864] hover:bg-[#23454f] rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5 shadow-xs whitespace-nowrap self-start sm:self-auto"
         >
           <Plus className="w-3.5 h-3.5" />
           <span>Preparar y Despachar Envío</span>
@@ -133,7 +170,6 @@ export const Modulo3PreparacionDespacho: React.FC = () => {
                 </span>
               </div>
               <h4 className="font-semibold text-sm text-neutral-800 mt-1">{c.nombre}</h4>
-              <p className="text-xs text-neutral-500">{c.temperaturaRequerida}</p>
             </div>
             <div className="text-[11px] text-neutral-400 pt-2 border-t border-neutral-100 flex items-center justify-between">
               <span>Capacidad: {c.capacidadMuestras} tubos</span>
@@ -238,17 +274,24 @@ export const Modulo3PreparacionDespacho: React.FC = () => {
       {/* MODAL: PREPARAR Y DESPACHAR ENVÍO */}
       <Modal
         isOpen={isNewDespachoModalOpen}
-        onClose={() => setIsNewDespachoModalOpen(false)}
+        onClose={cerrarPreparacion}
         title="Preparar y Despachar Envío a Laboratorio"
         subtitle="Agrupar muestras en conservadora, asignar precinto sanitario y emitir remito"
         maxWidth="lg"
       >
-        <form onSubmit={handleCreateDespacho} className="space-y-4 text-xs">
+        <form onSubmit={handleCreateDespacho} aria-busy={despachoEnCurso} className="space-y-4 text-xs">
           {/* Muestras Selection */}
           <div className="space-y-2">
             <span className="font-bold text-[#2D5864] uppercase tracking-wider text-[11px] block">
               1. Seleccionar Muestras a Empacar en este Envío *
             </span>
+            {muestrasListasParaEmpacar.length > 0 && (
+              <p className="text-neutral-600">
+                {condicionSeleccionada
+                  ? <>Condición de esta conservadora · <strong>{condicionSeleccionada}</strong>. Quitá las muestras seleccionadas para cambiarla.</>
+                  : 'Elegí muestras con la misma condición de conservación para esta conservadora.'}
+              </p>
+            )}
 
             {muestrasListasParaEmpacar.length === 0 ? (
               <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs">
@@ -258,10 +301,14 @@ export const Modulo3PreparacionDespacho: React.FC = () => {
               <div className="max-h-40 overflow-y-auto border border-[#E7E2DA] rounded-lg divide-y divide-neutral-100">
                 {muestrasListasParaEmpacar.map(m => {
                   const isChecked = formData.selectedMuestrasIds.includes(m.id);
+                  const incompatible = !isChecked && claveSeleccionada !== undefined &&
+                    claveConservacion(m.condicionConservacion) !== claveSeleccionada;
                   return (
                     <label
                       key={m.id}
-                      className={`flex items-center justify-between p-2.5 cursor-pointer transition-colors ${
+                      className={`flex items-center justify-between p-2.5 transition-colors ${
+                        incompatible ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                      } ${
                         isChecked ? 'bg-[#FAF6EF]' : 'hover:bg-neutral-50'
                       }`}
                     >
@@ -269,7 +316,8 @@ export const Modulo3PreparacionDespacho: React.FC = () => {
                         <input
                           type="checkbox"
                           checked={isChecked}
-                          onChange={() => handleToggleMuestra(m.id)}
+                          disabled={incompatible}
+                          onChange={() => handleToggleMuestra(m)}
                           className="w-4 h-4 text-[#2D5864] rounded border-neutral-300 focus:ring-[#2D5864]"
                         />
                         <div>
@@ -288,16 +336,21 @@ export const Modulo3PreparacionDespacho: React.FC = () => {
             )}
           </div>
 
-          {/* Cooler & Seal */}
+          <p id="temperatura-despacho-ayuda" className="text-neutral-600">
+            Medí la temperatura con las muestras dentro de la conservadora. Después cerrala y colocá el precinto.
+          </p>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
             <div>
-              <label className="block text-neutral-600 font-medium mb-1">
-                Conservadora Isotérmica *
+              <label htmlFor="conservadora-despacho" className="block text-neutral-600 font-medium mb-1">
+                Conservadora *
               </label>
               <select
+                id="conservadora-despacho"
+                required
                 value={formData.conservadoraId}
                 onChange={e => setFormData({ ...formData, conservadoraId: e.target.value })}
-                className="w-full p-2 bg-white border border-[#E7E2DA] rounded-lg"
+                className="h-9 w-full px-2 bg-white border border-[#E7E2DA] rounded-lg"
               >
                 {conservadoras.map(c => (
                   <option key={c.id} value={c.id}>
@@ -308,69 +361,82 @@ export const Modulo3PreparacionDespacho: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-neutral-600 font-medium mb-1">
-                Código Único de Precinto Sanitario *
+              <label htmlFor="temperatura-despacho" className="block text-neutral-600 font-medium mb-1">
+                Temperatura de salida (°C) *
               </label>
               <input
+                id="temperatura-despacho"
+                type="number"
+                step="0.1"
+                min={rango?.[0] ?? undefined}
+                max={rango?.[1]}
+                required
+                aria-describedby={seleccionValida ? 'temperatura-despacho-ayuda temperatura-despacho-rango' : 'temperatura-despacho-ayuda'}
+                aria-invalid={errorTemperatura}
+                value={formData.temperaturaDespachoC}
+                onChange={e => setFormData({ ...formData, temperaturaDespachoC: e.target.value })}
+                className={`h-9 w-full px-2 bg-white border rounded-lg font-mono ${errorTemperatura ? 'border-rose-500' : 'border-[#E7E2DA]'}`}
+              />
+            </div>
+
+            {seleccionValida && (
+              <p
+                id="temperatura-despacho-rango"
+                role={errorTemperatura ? 'alert' : undefined}
+                className={`sm:col-span-2 ${errorTemperatura ? 'text-rose-700' : 'text-neutral-600'}`}
+              >
+                {hayTemperatura && rango && !temperaturaValida && 'La temperatura ingresada está fuera de rango. '}
+                {requisitoTemperatura}
+              </p>
+            )}
+
+            <div>
+              <label htmlFor="precinto-despacho" className="block text-neutral-600 font-medium mb-1">
+                Código de precinto *
+              </label>
+              <input
+                id="precinto-despacho"
                 type="text"
                 required
                 value={formData.precintoCodigo}
                 onChange={e => setFormData({ ...formData, precintoCodigo: e.target.value })}
                 placeholder="PREC-XXXXX"
-                className="w-full p-2 bg-white border border-[#E7E2DA] rounded-lg font-mono font-bold text-[#2D5864]"
+                className="h-9 w-full px-2 bg-white border border-[#E7E2DA] rounded-lg font-mono font-bold text-[#2D5864]"
               />
-              <span className="text-[10px] text-neutral-400 mt-0.5 block">
-                Este precinto será inspeccionado por el laboratorio de destino.
-              </span>
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-neutral-600 font-medium mb-1">Responsable de Despacho *</label>
+              <label htmlFor="responsable-despacho" className="block text-neutral-600 font-medium mb-1">Responsable de despacho *</label>
               <input
+                id="responsable-despacho"
                 type="text"
                 required
                 value={formData.responsableDespacho}
                 onChange={e => setFormData({ ...formData, responsableDespacho: e.target.value })}
-                className="w-full p-2 bg-white border border-[#E7E2DA] rounded-lg"
+                className="h-9 w-full px-2 bg-white border border-[#E7E2DA] rounded-lg"
               />
             </div>
 
             <div>
-              <label className="block text-neutral-600 font-medium mb-1">Transportista / Chofer *</label>
+              <label htmlFor="transportista-despacho" className="block text-neutral-600 font-medium mb-1">Transportista *</label>
               <input
+                id="transportista-despacho"
                 type="text"
                 required
                 value={formData.transportista}
                 onChange={e => setFormData({ ...formData, transportista: e.target.value })}
-                className="w-full p-2 bg-white border border-[#E7E2DA] rounded-lg"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-neutral-600 font-medium mb-1">
-                Temperatura Medida al Despacho (°C) *
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                required
-                value={formData.temperaturaDespachoC}
-                onChange={e => setFormData({ ...formData, temperaturaDespachoC: parseFloat(e.target.value) || 0 })}
-                className="w-full p-2 bg-white border border-[#E7E2DA] rounded-lg font-mono"
+                className="h-9 w-full px-2 bg-white border border-[#E7E2DA] rounded-lg"
               />
             </div>
 
             <div>
-              <label className="block text-neutral-600 font-medium mb-1">Observaciones</label>
+              <label htmlFor="observaciones-despacho" className="block text-neutral-600 font-medium mb-1">Observaciones</label>
               <input
+                id="observaciones-despacho"
                 type="text"
                 value={formData.observaciones}
                 onChange={e => setFormData({ ...formData, observaciones: e.target.value })}
-                className="w-full p-2 bg-white border border-[#E7E2DA] rounded-lg"
+                className="h-9 w-full px-2 bg-white border border-[#E7E2DA] rounded-lg"
               />
             </div>
           </div>
@@ -378,17 +444,18 @@ export const Modulo3PreparacionDespacho: React.FC = () => {
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-neutral-100">
             <button
               type="button"
-              onClick={() => setIsNewDespachoModalOpen(false)}
-              className="px-4 py-2 text-neutral-600"
+              onClick={cerrarPreparacion}
+              disabled={despachoEnCurso}
+              className="px-4 py-2 text-neutral-600 disabled:opacity-50"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              disabled={formData.selectedMuestrasIds.length === 0}
+              disabled={despachoEnCurso || !seleccionValida || !temperaturaValida}
               className="px-4 py-2 font-semibold text-white bg-[#2D5864] hover:bg-[#23454f] rounded-lg transition-colors disabled:opacity-50"
             >
-              Emitir Remito y Despachar ({formData.selectedMuestrasIds.length} muestras)
+              {despachoEnCurso ? 'Despachando…' : `Emitir Remito y Despachar (${formData.selectedMuestrasIds.length} muestras)`}
             </button>
           </div>
         </form>
