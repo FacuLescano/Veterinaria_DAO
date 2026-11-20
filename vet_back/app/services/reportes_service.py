@@ -2,12 +2,12 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.services.reportes.base import RUTA_LOGO
-from app.services.reportes.servicio_tiempos_sla import ServicioTiemposSla, MATRIZ_SLA
+from app.services.reportes.servicio_tiempos_sla import ServicioTiemposSla
 from app.services.reportes.servicio_muestras_rechazadas import ServicioMuestrasRechazadas
 from app.services.reportes.servicio_rendimiento_clinico import ServicioRendimientoClinico
 from app.services.reportes.servicio_eficacia_diagnostica import ServicioEficaciaDiagnostica
 
-__all__ = ["ReportesService", "MATRIZ_SLA", "RUTA_LOGO"]
+__all__ = ["ReportesService", "RUTA_LOGO"]
 
 
 class ReportesService:
@@ -17,9 +17,6 @@ class ReportesService:
         self._servicio_rechazadas = ServicioMuestrasRechazadas(db)
         self._servicio_rendimiento = ServicioRendimientoClinico(db)
         self._servicio_eficacia = ServicioEficaciaDiagnostica(db)
-
-    def obtener_sla_objetivo(self, tipo_analisis: str, prioridad: str) -> float:
-        return self._servicio_tiempos.obtener_sla_objetivo(tipo_analisis, prioridad)
 
     def generar_reporte_tiempos_sla(
         self,
@@ -63,14 +60,12 @@ class ReportesService:
         self,
         fecha_desde: str | None = None,
         fecha_hasta: str | None = None,
-        causa_filtro: str | None = None,
         transportista_filtro: str | None = None,
         estado_filtro: str | None = None,
     ) -> dict[str, Any]:
         return self._servicio_rechazadas.generar_reporte_muestras_rechazadas(
             fecha_desde=fecha_desde,
             fecha_hasta=fecha_hasta,
-            causa_filtro=causa_filtro,
             transportista_filtro=transportista_filtro,
             estado_filtro=estado_filtro,
         )
@@ -138,7 +133,7 @@ class ReportesService:
         )
 
     # ==========================================
-    # Métodos para Reporte 4: Eficacia Diagnóstica & Hallazgos Críticos
+    # Métodos para Reporte 4: seguimiento de resultados de laboratorio
     # ==========================================
 
     def generar_reporte_eficacia_diagnostica(

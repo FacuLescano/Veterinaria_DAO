@@ -30,9 +30,9 @@ export const ModuloReportes: React.FC = () => {
           >
             <Clock className={`w-5 h-5 shrink-0 mt-0.5 ${activeReportTab === 'reporte1' ? 'text-white' : 'text-[#2D5864]'}`} />
             <div className="min-w-0">
-              <span className="font-semibold text-xs leading-tight block">1. Tránsito & SLA</span>
+              <span className="font-semibold text-xs leading-tight block">1. Muestras y análisis</span>
               <p className={`text-[11px] mt-0.5 truncate ${activeReportTab === 'reporte1' ? 'text-white/80' : 'text-neutral-500'}`}>
-                Tiempos de viaje, proceso y cumplimiento
+                Extracción y resultados registrados
               </p>
             </div>
           </button>
@@ -48,9 +48,9 @@ export const ModuloReportes: React.FC = () => {
           >
             <ShieldAlert className={`w-5 h-5 shrink-0 mt-0.5 ${activeReportTab === 'reporte2' ? 'text-white' : 'text-[#5F8E9C]'}`} />
             <div className="min-w-0">
-              <span className="font-semibold text-xs leading-tight block">2. Muestras Rechazadas</span>
+              <span className="font-semibold text-xs leading-tight block">2. Recepción en laboratorio</span>
               <p className={`text-[11px] mt-0.5 truncate ${activeReportTab === 'reporte2' ? 'text-white/80' : 'text-neutral-500'}`}>
-                Bioseguridad, precintos y cadena de frío
+                Estados y tiempos de recepción
               </p>
             </div>
           </button>
@@ -66,9 +66,9 @@ export const ModuloReportes: React.FC = () => {
           >
             <Stethoscope className={`w-5 h-5 shrink-0 mt-0.5 ${activeReportTab === 'reporte3' ? 'text-white' : 'text-[#5F8E9C]'}`} />
             <div className="min-w-0">
-              <span className="font-semibold text-xs leading-tight block">3. Rendimiento Médico</span>
+              <span className="font-semibold text-xs leading-tight block">3. Actividad médica</span>
               <p className={`text-[11px] mt-0.5 truncate ${activeReportTab === 'reporte3' ? 'text-white/80' : 'text-neutral-500'}`}>
-                Consultas, derivaciones y ausentismo
+                Turnos, consultas y órdenes
               </p>
             </div>
           </button>
@@ -84,9 +84,9 @@ export const ModuloReportes: React.FC = () => {
           >
             <Microscope className={`w-5 h-5 shrink-0 mt-0.5 ${activeReportTab === 'reporte4' ? 'text-white' : 'text-[#5F8E9C]'}`} />
             <div className="min-w-0">
-              <span className="font-semibold text-xs leading-tight block">4. Eficacia Diagnóstica</span>
+              <span className="font-semibold text-xs leading-tight block">4. Resultados de laboratorio</span>
               <p className={`text-[11px] mt-0.5 truncate ${activeReportTab === 'reporte4' ? 'text-white/80' : 'text-neutral-500'}`}>
-                Hallazgos críticos y positividad por especie
+                Resultados recibidos y pendientes
               </p>
             </div>
           </button>

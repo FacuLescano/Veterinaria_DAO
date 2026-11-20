@@ -1,11 +1,62 @@
-"""Tests unitarios y de integración para el Reporte 1: Tiempos de Tránsito y SLA."""
+"""Tests de integración para los cuatro reportes simplificados."""
 
-from datetime import datetime
-from types import SimpleNamespace
+from datetime import datetime, timedelta
+from uuid import uuid4
 
 import pytest
 from test.conftest import TestingSessionLocal
-from app.services.reportes_service import ReportesService, MATRIZ_SLA
+from app.services.reportes_service import ReportesService
+from app.models.orden_analisis import AsociacionDetalleMuestra, DetalleOrdenAnalisis, Muestra, OrdenAnalisis
+from app.models.recepcion import ResultadoAnalisis
+
+
+def test_indicadores_usan_muestras_resultados_recepcion_y_consultas_reales(db_session, datos_prueba):
+    orden = OrdenAnalisis(consulta_id=datos_prueba["consulta_id"], veterinario_id=datos_prueba["veterinario_id"])
+    db_session.add(orden)
+    db_session.flush()
+    detalle = DetalleOrdenAnalisis(orden_id=orden.id, tipo_analisis_id=datos_prueba["tipo_analisis_id"])
+    muestra = Muestra(
+        codigo_etiqueta=f"M-{uuid4().hex[:8]}", orden_id=orden.id,
+        tipo_muestra_id=datos_prueba["tipo_muestra_id"], fecha_extraccion=datetime.now() - timedelta(days=1),
+        responsable_extraccion="Equipo clínico", condiciones_conservacion="Refrigerada", estado="recibida",
+    )
+    db_session.add_all([detalle, muestra])
+    db_session.flush()
+    db_session.add(AsociacionDetalleMuestra(detalle_id=detalle.id, muestra_id=muestra.id))
+    db_session.commit()
+
+    service = ReportesService(db_session)
+    reporte_muestras = service.generar_reporte_tiempos_sla()
+    assert reporte_muestras["kpis"]["total_muestras_extraidas"] == 1
+    assert reporte_muestras["kpis"]["muestras_con_resultado"] == 0
+    assert reporte_muestras["kpis"]["muestras_sin_resultado"] == 1
+    assert reporte_muestras["distribucion_tipo_muestra"] == [{"tipo_muestra": "Sangre con EDTA", "cantidad": 1}]
+
+    reporte_recepcion = service.generar_reporte_muestras_rechazadas()
+    assert reporte_recepcion["kpis"]["muestras_aceptadas"] == 1
+    assert reporte_recepcion["kpis"]["muestras_pendientes"] == 0
+    assert reporte_recepcion["kpis"]["muestras_rechazadas"] == 0
+
+    reporte_clinico = service.generar_reporte_rendimiento_clinico()
+    assert reporte_clinico["kpis"]["total_consultas_realizadas"] == 1
+    assert reporte_clinico["kpis"]["turnos_atendidos"] == 0
+    assert reporte_clinico["kpis"]["porcentaje_consultas_con_orden"] == 100.0
+
+    resultado = ResultadoAnalisis(
+        id=str(uuid4()), orden_id=str(orden.id), detalle_orden_id=str(detalle.id), muestra_id=str(muestra.id),
+        paciente_id=str(orden.consulta.pet_id), fecha_recepcion=datetime.now(), procedencia="Laboratorio",
+        estado="recibido", datos={}, registrado_por="Laboratorio",
+    )
+    db_session.add(resultado)
+    db_session.commit()
+
+    reporte_muestras = service.generar_reporte_tiempos_sla()
+    assert reporte_muestras["kpis"]["muestras_con_resultado"] == 1
+    assert reporte_muestras["kpis"]["muestras_sin_resultado"] == 0
+    assert reporte_muestras["kpis"]["porcentaje_con_resultado"] == 100.0
+    reporte_resultados = service.generar_reporte_eficacia_diagnostica()
+    assert reporte_resultados["kpis"]["resultados_recibidos"] == 1
+    assert reporte_resultados["kpis"]["analisis_pendientes"] == 0
 
 
 @pytest.fixture
@@ -22,51 +73,20 @@ def test_generar_reporte_tiempos_sla(db_session):
     reporte = service.generar_reporte_tiempos_sla()
 
     assert "kpis" in reporte
-    assert "sla_por_tipo_analisis" in reporte
-    assert "rendimiento_transportistas" in reporte
-    assert "detalles_muestras" in reporte
+    assert "distribucion_tipo_muestra" in reporte
+    assert "comparacion_muestras" in reporte
 
     kpis = reporte["kpis"]
-    assert kpis["total_muestras_analizadas"] == 0
-    assert kpis["tiempo_promedio_transito_horas"] == 0
-    assert kpis["tiempo_promedio_total_horas"] == 0
-    assert reporte["detalles_muestras"] == []
-    assert 0 <= kpis["tasa_cumplimiento_sla_porcentaje"] <= 100
-
-    # Verificar cálculo de SLA por tipo de análisis
-    for row in reporte["sla_por_tipo_analisis"]:
-        assert row["tipo_analisis"] in MATRIZ_SLA or row["tipo_analisis"] is not None
-        assert row["sla_objetivo_horas"] > 0
-        assert 0 <= row["cumplimiento_porcentaje"] <= 100
-        assert row["estado_sla"] in {"Cumplido", "En riesgo", "Excedido"}
+    assert kpis["total_muestras_extraidas"] == 0
+    assert kpis["muestras_con_resultado"] == 0
+    assert kpis["muestras_sin_resultado"] == 0
+    assert kpis["porcentaje_con_resultado"] is None
 
 
 def test_filtros_reporte_tiempos_sla(db_session):
     service = ReportesService(db_session)
-    # Filtro por prioridad
-    reporte_urgente = service.generar_reporte_tiempos_sla(prioridad_filtro="Urgente")
-    for d in reporte_urgente["detalles_muestras"]:
-        assert d["prioridad"] == "Urgente"
-
-    # Filtro por tipo de análisis
-    reporte_hemo = service.generar_reporte_tiempos_sla(tipo_analisis_filtro="Hemograma Completo")
-    for d in reporte_hemo["detalles_muestras"]:
-        assert d["tipo_analisis"] == "Hemograma Completo"
-
-
-def test_fecha_de_resultado_heredada_anterior_al_ingreso_usa_fecha_real_de_registro(db_session):
-    service = ReportesService(db_session)._servicio_tiempos
-    ingreso = datetime(2026, 11, 12, 22, 43)
-    fecha_registro = datetime(2026, 11, 13, 1, 0)
-    resultado = SimpleNamespace(
-        fecha_recepcion=datetime(2026, 1, 1),
-        creado_en=fecha_registro,
-    )
-
-    assert service._fecha_resultado_valida(resultado, ingreso) == fecha_registro
-
-    resultado.creado_en = datetime(2026, 11, 12, 20, 0)
-    assert service._fecha_resultado_valida(resultado, ingreso) is None
+    reporte_tipo = service.generar_reporte_tiempos_sla(tipo_analisis_filtro="Sangre con EDTA")
+    assert reporte_tipo["kpis"]["total_muestras_extraidas"] == 0
 
 
 def test_exportar_excel(db_session):
@@ -75,7 +95,7 @@ def test_exportar_excel(db_session):
     excel_bytes = service.exportar_excel(datos)
 
     assert isinstance(excel_bytes, bytes)
-    assert len(excel_bytes) > 2000  # Archivo binario xlsx generado con contenido
+    assert excel_bytes.startswith(b"PK")
 
 
 def test_exportar_pdf(db_session):
@@ -85,7 +105,7 @@ def test_exportar_pdf(db_session):
 
     assert isinstance(pdf_bytes, bytes)
     assert pdf_bytes.startswith(b"%PDF")
-    assert len(pdf_bytes) > 1000
+    assert len(pdf_bytes) > 500
 
 
 def test_endpoint_reporte_json(client):
@@ -93,8 +113,8 @@ def test_endpoint_reporte_json(client):
     assert response.status_code == 200
     data = response.json()
     assert "kpis" in data
-    assert "sla_por_tipo_analisis" in data
-    assert "detalles_muestras" in data
+    assert "distribucion_tipo_muestra" in data
+    assert "comparacion_muestras" in data
 
 
 def test_endpoint_descargar_excel(client):
@@ -120,37 +140,24 @@ def test_generar_reporte_muestras_rechazadas(db_session):
     reporte = service.generar_reporte_muestras_rechazadas()
 
     assert "kpis" in reporte
-    assert "distribucion_causas_rechazo" in reporte
-    assert "confiabilidad_transportistas" in reporte
-    assert "detalles_auditoria" in reporte
+    assert "distribucion_estados_recepcion" in reporte
+    assert "tiempos_recepcion" in reporte
 
     kpis = reporte["kpis"]
-    assert kpis["total_muestras_auditadas"] == 0
+    assert kpis["muestras_pendientes"] == 0
     assert kpis["muestras_rechazadas"] == 0
     assert kpis["muestras_aceptadas"] == 0
-    assert 0 <= kpis["tasa_rechazo_global_porcentaje"] <= 100
-    assert 0 <= kpis["integridad_precintos_porcentaje"] <= 100
-    assert 0 <= kpis["conformidad_cadena_frio_porcentaje"] <= 100
-
-    # Verificar causas de rechazo
-    assert reporte["detalles_auditoria"] == []
-    assert reporte["distribucion_causas_rechazo"] == []
-    for causa in reporte["distribucion_causas_rechazo"]:
-        assert causa["cantidad"] > 0
-        assert 0 <= causa["porcentaje"] <= 100
-        assert causa["severidad"] in {"Crítica", "Moderada"}
+    assert kpis["porcentaje_aceptadas"] is None
+    assert kpis["porcentaje_rechazadas"] is None
 
 
 def test_filtros_muestras_rechazadas(db_session):
     service = ReportesService(db_session)
-    # Filtro por estado
     solo_rechazadas = service.generar_reporte_muestras_rechazadas(estado_filtro="Rechazada")
-    for d in solo_rechazadas["detalles_auditoria"]:
-        assert d["estado_muestra"] == "Rechazada"
+    assert solo_rechazadas["kpis"]["muestras_rechazadas"] == 0
 
     solo_aceptadas = service.generar_reporte_muestras_rechazadas(estado_filtro="Aceptada")
-    for d in solo_aceptadas["detalles_auditoria"]:
-        assert d["estado_muestra"] == "Aceptada"
+    assert solo_aceptadas["kpis"]["muestras_aceptadas"] == 0
 
 
 def test_exportar_excel_muestras_rechazadas(db_session):
@@ -159,7 +166,7 @@ def test_exportar_excel_muestras_rechazadas(db_session):
     excel_bytes = service.exportar_excel_muestras_rechazadas(datos)
 
     assert isinstance(excel_bytes, bytes)
-    assert len(excel_bytes) > 2000
+    assert excel_bytes.startswith(b"PK")
 
 
 def test_exportar_pdf_muestras_rechazadas(db_session):
@@ -169,7 +176,7 @@ def test_exportar_pdf_muestras_rechazadas(db_session):
 
     assert isinstance(pdf_bytes, bytes)
     assert pdf_bytes.startswith(b"%PDF")
-    assert len(pdf_bytes) > 1000
+    assert len(pdf_bytes) > 500
 
 
 def test_endpoint_muestras_rechazadas_json(client):
@@ -177,34 +184,15 @@ def test_endpoint_muestras_rechazadas_json(client):
     assert response.status_code == 200
     data = response.json()
     assert "kpis" in data
-    assert "distribucion_causas_rechazo" in data
-    assert "confiabilidad_transportistas" in data
-    assert "detalles_auditoria" in data
-    assert data["filtros_disponibles"]["causas"] == ["Todas"]
-
-    # Probar filtrado por causa usando tanto 'causa' como 'causa_rechazo'
-    res_causa = client.get("/api/v1/reportes/muestras-rechazadas?causa=Excursi%C3%B3n+T%C3%A9rmica")
-    assert res_causa.status_code == 200
-    data_causa = res_causa.json()
-    assert data_causa["detalles_auditoria"] == []
-    for d in data_causa["detalles_auditoria"]:
-        assert "Excursión Térmica" in d["causa_rechazo"]
-    # Los filtros disponibles no deben vaciarse al filtrar
-    assert data_causa["filtros_disponibles"]["causas"] == ["Todas"]
-
-    res_alias = client.get("/api/v1/reportes/muestras-rechazadas?causa_rechazo=Precinto")
-    assert res_alias.status_code == 200
-    data_alias = res_alias.json()
-    assert data_alias["detalles_auditoria"] == []
-    for d in data_alias["detalles_auditoria"]:
-        assert "Precinto" in d["causa_rechazo"]
+    assert "distribucion_estados_recepcion" in data
+    assert data["filtros_disponibles"]["estados"] == ["Todos", "Pendiente", "Aceptada", "Rechazada"]
 
 
 def test_endpoint_muestras_rechazadas_excel(client):
     response = client.get("/api/v1/reportes/muestras-rechazadas/excel")
     assert response.status_code == 200
     assert "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" in response.headers["content-type"]
-    assert len(response.content) > 2000
+    assert response.content.startswith(b"PK")
 
 
 def test_endpoint_muestras_rechazadas_pdf(client):
@@ -224,18 +212,17 @@ def test_generar_reporte_rendimiento_clinico(db_session):
 
     assert "kpis" in reporte
     assert "rendimiento_veterinarios" in reporte
-    assert "top_estudios_prescriptos" in reporte
     assert "distribucion_estados_turno" in reporte
-    assert "detalles_consultas" in reporte
+    assert "actividad_por_hora" in reporte
+    assert "comparacion_consultas_ordenes" in reporte
     assert "filtros_disponibles" in reporte
 
     kpis = reporte["kpis"]
-    assert kpis["total_turnos_agendados"] == 0
     assert kpis["turnos_atendidos"] == 0
-    assert 0 <= kpis["tasa_ausentismo_porcentaje"] <= 100
-    assert 0 <= kpis["tasa_derivacion_global_porcentaje"] <= 100
-    assert kpis["total_ordenes_laboratorio"] == 0
-    assert kpis["total_estudios_solicitados"] == 0
+    assert kpis["turnos_cancelados"] == 0
+    assert kpis["turnos_ausentes"] == 0
+    assert kpis["total_consultas_realizadas"] == 0
+    assert kpis["porcentaje_consultas_con_orden"] is None
 
     # Verificar veterinarios
     assert reporte["rendimiento_veterinarios"] == []
@@ -255,17 +242,14 @@ def test_filtros_rendimiento_clinico(db_session):
 
     # Filtro por médico veterinario
     rep_vet = service.generar_reporte_rendimiento_clinico(veterinario_filtro="Sofía Martínez")
-    for d in rep_vet["detalles_consultas"]:
-        assert "Sofía Martínez" in d["veterinario_nombre"]
+    assert rep_vet["rendimiento_veterinarios"] == []
 
     # Filtro por derivación
     rep_deriv = service.generar_reporte_rendimiento_clinico(derivacion_filtro="Con Derivación")
-    for d in rep_deriv["detalles_consultas"]:
-        assert d["derivo_laboratorio"] is True
+    assert rep_deriv["kpis"]["total_consultas_realizadas"] == 0
 
     rep_sin_deriv = service.generar_reporte_rendimiento_clinico(derivacion_filtro="Sin Derivación")
-    for d in rep_sin_deriv["detalles_consultas"]:
-        assert d["derivo_laboratorio"] is False
+    assert rep_sin_deriv["kpis"]["total_consultas_realizadas"] == 0
 
 
 def test_exportar_excel_rendimiento_clinico(db_session):
@@ -274,7 +258,7 @@ def test_exportar_excel_rendimiento_clinico(db_session):
     excel_bytes = service.exportar_excel_rendimiento_clinico(datos)
 
     assert isinstance(excel_bytes, bytes)
-    assert len(excel_bytes) > 2000
+    assert excel_bytes.startswith(b"PK")
 
 
 def test_exportar_pdf_rendimiento_clinico(db_session):
@@ -284,7 +268,7 @@ def test_exportar_pdf_rendimiento_clinico(db_session):
 
     assert isinstance(pdf_bytes, bytes)
     assert pdf_bytes.startswith(b"%PDF")
-    assert len(pdf_bytes) > 1000
+    assert len(pdf_bytes) > 500
 
 
 def test_endpoint_rendimiento_clinico_json(client):
@@ -294,7 +278,7 @@ def test_endpoint_rendimiento_clinico_json(client):
     assert "kpis" in data
     assert "rendimiento_veterinarios" in data
     assert "top_estudios_prescriptos" in data
-    assert "detalles_consultas" in data
+    assert "actividad_por_hora" in data
     assert data["filtros_disponibles"]["veterinarios"] == ["Todos"]
 
     # Probar filtrado por veterinario
@@ -310,7 +294,7 @@ def test_endpoint_rendimiento_clinico_excel(client):
     response = client.get("/api/v1/reportes/rendimiento-clinico/excel")
     assert response.status_code == 200
     assert "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" in response.headers["content-type"]
-    assert len(response.content) > 2000
+    assert response.content.startswith(b"PK")
 
 
 def test_endpoint_rendimiento_clinico_pdf(client):
@@ -330,19 +314,16 @@ def test_generar_reporte_eficacia_diagnostica(db_session):
     reporte = service.generar_reporte_eficacia_diagnostica()
 
     assert "kpis" in reporte
-    assert "desglose_por_especie" in reporte
-    assert "desglose_por_grupo_etario" in reporte
-    assert "top_analitos_criticos" in reporte
-    assert "distribucion_severidad" in reporte
-    assert "detalles_diagnosticos" in reporte
+    assert "evolucion_resultados" in reporte
+    assert "estado_resultados" in reporte
+    assert "tiempos_respuesta" in reporte
+    assert "antiguedad_pendientes_dias" in reporte
 
     kpis = reporte["kpis"]
-    assert kpis["total_estudios_procesados"] == 0
-    assert kpis["total_con_hallazgos_criticos"] == 0
-    assert kpis["total_fisiologicos_normales"] == 0
-    assert 0 <= kpis["tasa_positividad_porcentaje"] <= 100
-    assert kpis["total_especies_auditadas"] == 0
-    assert kpis["tasa_concordancia_diagnostica"] is None
+    assert kpis["resultados_recibidos"] == 0
+    assert kpis["analisis_pendientes"] == 0
+    assert kpis["porcentaje_con_resultado"] is None
+    assert kpis["tiempo_promedio_respuesta_horas"] is None
 
 
 def test_filtros_reporte_eficacia_diagnostica(db_session):
@@ -350,20 +331,15 @@ def test_filtros_reporte_eficacia_diagnostica(db_session):
 
     # Filtrar por especie Canino
     rep_can = service.generar_reporte_eficacia_diagnostica(especie_filtro="Canino")
-    assert rep_can["detalles_diagnosticos"] == []
-    for d in rep_can["detalles_diagnosticos"]:
-        assert d["especie"] == "Canino"
+    assert rep_can["kpis"]["resultados_recibidos"] == 0
 
     # Filtrar por especie Felino
     rep_fel = service.generar_reporte_eficacia_diagnostica(especie_filtro="Felino")
-    assert rep_fel["detalles_diagnosticos"] == []
-    for d in rep_fel["detalles_diagnosticos"]:
-        assert d["especie"] == "Felino"
+    assert rep_fel["kpis"]["resultados_recibidos"] == 0
 
     # Filtrar por Estado Diagnóstico
     rep_pat = service.generar_reporte_eficacia_diagnostica(estado_diagnostico_filtro="Hallazgo Patológico")
-    for d in rep_pat["detalles_diagnosticos"]:
-        assert d["estado_diagnostico"] == "Hallazgo Patológico"
+    assert rep_pat["kpis"]["resultados_recibidos"] == 0
 
 
 def test_exportar_excel_eficacia_diagnostica(db_session):
@@ -372,7 +348,7 @@ def test_exportar_excel_eficacia_diagnostica(db_session):
     excel_bytes = service.exportar_excel_eficacia_diagnostica(datos)
 
     assert isinstance(excel_bytes, bytes)
-    assert len(excel_bytes) > 2000
+    assert excel_bytes.startswith(b"PK")
 
 
 def test_exportar_pdf_eficacia_diagnostica(db_session):
@@ -382,7 +358,7 @@ def test_exportar_pdf_eficacia_diagnostica(db_session):
 
     assert isinstance(pdf_bytes, bytes)
     assert pdf_bytes.startswith(b"%PDF")
-    assert len(pdf_bytes) > 1000
+    assert len(pdf_bytes) > 500
 
 
 def test_endpoint_eficacia_diagnostica_json(client):
@@ -390,24 +366,15 @@ def test_endpoint_eficacia_diagnostica_json(client):
     assert response.status_code == 200
     data = response.json()
     assert "kpis" in data
-    assert "desglose_por_especie" in data
-    assert "top_analitos_criticos" in data
-    assert "detalles_diagnosticos" in data
-    assert data["filtros_disponibles"]["especies"] == ["Todas"]
-
-    # Probar filtrado por query param especie
-    res_esp = client.get("/api/v1/reportes/eficacia-diagnostica?especie=Felino")
-    assert res_esp.status_code == 200
-    data_esp = res_esp.json()
-    for d in data_esp["detalles_diagnosticos"]:
-        assert d["especie"] == "Felino"
+    assert "evolucion_resultados" in data
+    assert data["filtros_disponibles"]["tipos_analisis"] == ["Todos"]
 
 
 def test_endpoint_eficacia_diagnostica_excel_y_pdf(client):
     res_excel = client.get("/api/v1/reportes/eficacia-diagnostica/excel")
     assert res_excel.status_code == 200
     assert "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" in res_excel.headers["content-type"]
-    assert len(res_excel.content) > 2000
+    assert res_excel.content.startswith(b"PK")
 
     res_pdf = client.get("/api/v1/reportes/eficacia-diagnostica/pdf")
     assert res_pdf.status_code == 200

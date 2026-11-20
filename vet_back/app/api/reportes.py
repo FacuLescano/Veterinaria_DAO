@@ -25,7 +25,7 @@ class EnvioReporteEmailEntrada(BaseModel):
     prioridad: str | None = None
 
 
-@router.get("/tiempos-sla", summary="Reporte 1: Tiempo Promedio de Tránsito y Cumplimiento de SLA")
+@router.get("/tiempos-sla", summary="Reporte 1: Estadísticas de muestras y análisis")
 def obtener_reporte_tiempos_sla(
     fecha_desde: str | None = Query(None, description="Fecha inicio YYYY-MM-DD"),
     fecha_hasta: str | None = Query(None, description="Fecha fin YYYY-MM-DD"),
@@ -127,30 +127,24 @@ class EnvioReporteRechazadasEmailEntrada(BaseModel):
     incluir_excel: bool = True
     fecha_desde: str | None = None
     fecha_hasta: str | None = None
-    causa: str | None = None
-    causa_rechazo: str | None = None
     transportista: str | None = None
     estado_muestra: str | None = None
     estado: str | None = None
 
 
-@router.get("/muestras-rechazadas", summary="Reporte 2: Muestras Rechazadas por Fallas en Transporte y Bioseguridad")
+@router.get("/muestras-rechazadas", summary="Reporte 2: Recepción de muestras en laboratorio")
 def obtener_reporte_muestras_rechazadas(
     fecha_desde: str | None = Query(None, description="Fecha inicio YYYY-MM-DD"),
     fecha_hasta: str | None = Query(None, description="Fecha fin YYYY-MM-DD"),
-    causa: str | None = Query(None, description="Filtro por Causa Raíz de Rechazo"),
-    causa_rechazo: str | None = Query(None, description="Alias para causa"),
     transportista: str | None = Query(None, description="Filtro por Transportista"),
     estado_muestra: str | None = Query(None, description="Filtro por Estado (Rechazada / Aceptada)"),
     estado: str | None = Query(None, description="Alias para estado_muestra"),
     service: ReportesService = Depends(get_service),
 ) -> dict[str, Any]:
-    filtro_causa = causa or causa_rechazo
     filtro_estado = estado_muestra or estado
     return service.generar_reporte_muestras_rechazadas(
         fecha_desde=fecha_desde,
         fecha_hasta=fecha_hasta,
-        causa_filtro=filtro_causa,
         transportista_filtro=transportista,
         estado_filtro=filtro_estado,
     )
@@ -160,19 +154,15 @@ def obtener_reporte_muestras_rechazadas(
 def descargar_reporte_muestras_rechazadas_excel(
     fecha_desde: str | None = Query(None),
     fecha_hasta: str | None = Query(None),
-    causa: str | None = Query(None),
-    causa_rechazo: str | None = Query(None),
     transportista: str | None = Query(None),
     estado_muestra: str | None = Query(None),
     estado: str | None = Query(None),
     service: ReportesService = Depends(get_service),
 ):
-    filtro_causa = causa or causa_rechazo
     filtro_estado = estado_muestra or estado
     datos = service.generar_reporte_muestras_rechazadas(
         fecha_desde=fecha_desde,
         fecha_hasta=fecha_hasta,
-        causa_filtro=filtro_causa,
         transportista_filtro=transportista,
         estado_filtro=filtro_estado,
     )
@@ -189,19 +179,15 @@ def descargar_reporte_muestras_rechazadas_excel(
 def descargar_reporte_muestras_rechazadas_pdf(
     fecha_desde: str | None = Query(None),
     fecha_hasta: str | None = Query(None),
-    causa: str | None = Query(None),
-    causa_rechazo: str | None = Query(None),
     transportista: str | None = Query(None),
     estado_muestra: str | None = Query(None),
     estado: str | None = Query(None),
     service: ReportesService = Depends(get_service),
 ):
-    filtro_causa = causa or causa_rechazo
     filtro_estado = estado_muestra or estado
     datos = service.generar_reporte_muestras_rechazadas(
         fecha_desde=fecha_desde,
         fecha_hasta=fecha_hasta,
-        causa_filtro=filtro_causa,
         transportista_filtro=transportista,
         estado_filtro=filtro_estado,
     )
@@ -219,12 +205,10 @@ def enviar_reporte_muestras_rechazadas_email(
     payload: EnvioReporteRechazadasEmailEntrada,
     service: ReportesService = Depends(get_service),
 ) -> dict[str, Any]:
-    filtro_causa = payload.causa or payload.causa_rechazo
     filtro_estado = payload.estado_muestra or payload.estado
     datos = service.generar_reporte_muestras_rechazadas(
         fecha_desde=payload.fecha_desde,
         fecha_hasta=payload.fecha_hasta,
-        causa_filtro=filtro_causa,
         transportista_filtro=payload.transportista,
         estado_filtro=filtro_estado,
     )
@@ -257,7 +241,7 @@ class EnvioReporteRendimientoEmailEntrada(BaseModel):
     derivacion: str | None = None
 
 
-@router.get("/rendimiento-clinico", summary="Reporte 3: Rendimiento Clínico y Tasa de Derivación Médica")
+@router.get("/rendimiento-clinico", summary="Reporte 3: Actividad médica y consultas")
 def obtener_reporte_rendimiento_clinico(
     fecha_desde: str | None = Query(None, description="Fecha inicio YYYY-MM-DD"),
     fecha_hasta: str | None = Query(None, description="Fecha fin YYYY-MM-DD"),
@@ -367,7 +351,7 @@ def enviar_reporte_rendimiento_clinico_email(
 
 
 # ==========================================
-# Reporte 4: Eficacia Diagnóstica & Hallazgos Críticos
+# Reporte 4: Seguimiento de resultados de laboratorio
 # ==========================================
 
 
@@ -384,7 +368,7 @@ class EnvioReporteEficaciaEmailEntrada(BaseModel):
     tipo_analisis: str | None = None
 
 
-@router.get("/eficacia-diagnostica", summary="Obtener reporte de Eficacia Diagnóstica y Hallazgos Críticos")
+@router.get("/eficacia-diagnostica", summary="Seguimiento de resultados de laboratorio")
 def obtener_reporte_eficacia_diagnostica(
     fecha_desde: str | None = Query(None),
     fecha_hasta: str | None = Query(None),
