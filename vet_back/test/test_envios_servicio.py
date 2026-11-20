@@ -199,6 +199,80 @@ def test_precinto_anomalo_genera_incidencia_y_bloquea_despacho(datos_prueba):
         db.close()
 
 
+def test_rechazo_del_state_al_empaquetar_revierte_el_envio(datos_prueba):
+    with TestingSessionLocal() as db:
+        primera = _preparar_datos(db, datos_prueba, "EMPAQUE-01")
+        segunda = _preparar_datos(db, datos_prueba, "EMPAQUE-02")
+        segunda.reportar_inconveniente("Problema de identificación")
+        db.commit()
+
+        servicio = EnvioService(db)
+        conservadora = servicio.registrar_conservadora(ConservadoraCreate(codigo="EMPAQUE"))
+        payload = EnvioCreate(
+            origen="Clínica de prueba",
+            destino="Laboratorio externo",
+            condiciones_empaquetado="Muestras protegidas",
+            conservadoras=[ContenidoConservadoraCreate(
+                conservadora_id=conservadora.id,
+                muestra_ids=[primera.id, segunda.id],
+            )],
+        )
+
+        with pytest.raises(HTTPException, match="No se puede empaquetar.*con_inconveniente") as error:
+            servicio.crear_envio(payload)
+
+        assert error.value.status_code == 409
+        assert servicio.listar_envios() == []
+        assert conservadora.disponible
+        assert primera.estado == "lista_para_envio"
+        assert primera.historial == []
+        assert segunda.estado == "con_inconveniente"
+
+
+def test_despacho_revierte_el_lote_si_una_muestra_no_esta_empaquetada(datos_prueba):
+    with TestingSessionLocal() as db:
+        muestras = [
+            _preparar_datos(db, datos_prueba, "DESPACHO-01"),
+            _preparar_datos(db, datos_prueba, "DESPACHO-02"),
+        ]
+        servicio = EnvioService(db)
+        conservadora = servicio.registrar_conservadora(ConservadoraCreate(codigo="DESPACHO"))
+        envio = servicio.crear_envio(EnvioCreate(
+            origen="Clínica de prueba",
+            destino="Laboratorio externo",
+            condiciones_empaquetado="Muestras protegidas",
+            conservadoras=[ContenidoConservadoraCreate(
+                conservadora_id=conservadora.id,
+                muestra_ids=[muestra.id for muestra in muestras],
+            )],
+        ))
+        envio_id = envio["id"]
+        servicio.registrar_precinto(envio_id, PrecintoCreate(
+            codigo="PREC-DESPACHO",
+            conservadora_id=conservadora.id,
+            colocado_por="Personal de prueba",
+        ))
+        primera, segunda = envio["muestras"]
+        segunda.reportar_inconveniente("Incidencia durante la preparación")
+        segunda.marcar_lista_para_envio("Incidencia revisada")
+        db.commit()
+
+        with pytest.raises(HTTPException, match="No se puede despachar.*lista_para_envio") as error:
+            servicio.despachar_envio(envio_id, DespachoCreate(
+                responsable_despacho="Personal de prueba",
+                transportista="Transporte de prueba",
+            ))
+
+        assert error.value.status_code == 409
+        actualizado = servicio.obtener_envio(envio_id)
+        assert actualizado["estado"] == "en_preparacion"
+        assert actualizado["fecha_despacho"] is None
+        assert actualizado["remito"] is None
+        assert primera.estado == "empaquetada"
+        assert [evento.estado_nuevo for evento in primera.historial] == ["empaquetada"]
+        assert segunda.estado == "lista_para_envio"
+
+
 @pytest.mark.parametrize("otra_condicion", [
     "Temperatura Ambiente (15° a 25°C)",
     "Congelada (-20°C)",
