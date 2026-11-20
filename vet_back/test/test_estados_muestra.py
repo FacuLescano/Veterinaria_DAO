@@ -1,6 +1,6 @@
 import pytest
 
-from app.domain.estados_muestra import TransicionMuestraInvalida
+from app.state.estados_muestra import TransicionMuestraInvalida
 from app.models.orden_analisis import Muestra
 
 

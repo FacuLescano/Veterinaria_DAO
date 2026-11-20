@@ -52,7 +52,6 @@ export const INITIAL_MASCOTAS: Mascota[] = [
     sexo: 'Hembra',
     fechaNacimientoAprox: '2021-04-10',
     pesoKg: 28.5,
-    microchip: '981098102341902',
     alergias: 'Sensible a picadura de pulga',
     fotoUrl: '/assets/pets/luna.jpg',
   },
@@ -77,7 +76,6 @@ export const INITIAL_MASCOTAS: Mascota[] = [
     sexo: 'Macho',
     fechaNacimientoAprox: '2022-11-03',
     pesoKg: 12.8,
-    microchip: '981098109988112',
     alergias: 'Dermatitis atópica estacional',
     fotoUrl: '/assets/pets/thor.jpg',
   }

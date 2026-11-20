@@ -20,7 +20,6 @@ export interface Mascota {
   sexo: SexoMascota;
   fechaNacimientoAprox: string;
   pesoKg: number;
-  microchip?: string;
   alergias?: string;
   fotoUrl?: string;
 }

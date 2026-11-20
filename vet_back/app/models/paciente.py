@@ -42,7 +42,6 @@ class Mascota(Base):
     birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
-    microchip: Mapped[str | None] = mapped_column(String(100), nullable=True)
     photo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     responsible: Mapped[Responsable] = relationship(back_populates="pets")
     ownership_history: Mapped[list["HistorialResponsableMascota"]] = relationship(

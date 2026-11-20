@@ -1,4 +1,5 @@
 from datetime import datetime
+from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -142,10 +143,10 @@ class HistorialMuestraRead(BaseModel):
 
 class MuestraCreate(BaseModel):
     codigo_etiqueta: str = Field(
-        ...,
+        default_factory=lambda: f"TUB-{uuid4().hex.upper()}",
         min_length=1,
         max_length=60,
-        description="Identificación física única o código de barra/etiqueta del contenedor",
+        description="Rótulo único del contenedor. Se genera automáticamente cuando se omite.",
     )
     orden_id: int = Field(..., description="ID de la orden de análisis a la que pertenece la muestra")
     tipo_muestra_id: int = Field(..., description="ID del tipo de material biológico")

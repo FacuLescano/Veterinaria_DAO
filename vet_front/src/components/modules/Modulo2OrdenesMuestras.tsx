@@ -23,6 +23,13 @@ import {
   ArrowRight
 } from 'lucide-react';
 
+const extraccionInicial = {
+  tipoMaterial: 'Sangre con EDTA (Tubo lila)' as TipoMaterialBiologico,
+  responsableExtraccion: 'Dra. Sofía Carrizo',
+  condicionConservacion: 'Refrigerada (2° a 8°C)' as CondicionConservacion,
+  observaciones: ''
+};
+
 export const Modulo2OrdenesMuestras: React.FC = () => {
   const {
     ordenes,
@@ -41,7 +48,8 @@ export const Modulo2OrdenesMuestras: React.FC = () => {
 
   // Modals
   const [isNewOrdenModalOpen, setIsNewOrdenModalOpen] = useState(false);
-  const [isExtractMuestraModalOpen, setIsExtractMuestraModalOpen] = useState(false);
+  const [ordenExtraccionId, setOrdenExtraccionId] = useState<string | null>(null);
+  const [guardandoExtraccion, setGuardandoExtraccion] = useState(false);
   const [isVincularModalOpen, setIsVincularModalOpen] = useState(false);
 
   // New Orden Form State
@@ -54,28 +62,20 @@ export const Modulo2OrdenesMuestras: React.FC = () => {
   });
 
   // New Muestra Form State
-  const [newMuestraData, setNewMuestraData] = useState({
-    ordenId: ordenes[0]?.id || '',
-    identificacionFisica: '',
-    tipoMaterial: 'Sangre con EDTA (Tubo lila)' as TipoMaterialBiologico,
-    responsableExtraccion: 'Dra. Sofía Carrizo',
-    condicionConservacion: 'Refrigerada (2° a 8°C)' as CondicionConservacion,
-    observaciones: ''
-  });
+  const [newMuestraData, setNewMuestraData] = useState(extraccionInicial);
 
   // Vincular Form State
   const [vincularData, setVincularData] = useState({
-    ordenId: ordenes[0]?.id || '',
+    ordenId: '',
     detalleId: '',
-    muestraId: muestras[0]?.id || ''
+    muestraId: ''
   });
 
   useEffect(() => {
     if (mascotas.length && !mascotas.some((m) => m.id === newOrdenData.mascotaId)) setNewOrdenData((d) => ({ ...d, mascotaId: mascotas[0].id }));
-    if (ordenes.length && !ordenes.some((o) => o.id === newMuestraData.ordenId)) setNewMuestraData((d) => ({ ...d, ordenId: ordenes[0].id }));
-    const disponibles = muestras.filter((m) => m.estadoActual === 'Extraída');
-    if (disponibles.length && !disponibles.some((m) => m.id === vincularData.muestraId)) setVincularData((d) => ({ ...d, muestraId: disponibles[0].id }));
-  }, [mascotas, ordenes, muestras, newOrdenData.mascotaId, newMuestraData.ordenId, vincularData.muestraId]);
+  }, [mascotas, newOrdenData.mascotaId]);
+
+  const muestrasParaVincular = muestras.filter(m => m.ordenId === vincularData.ordenId && m.estadoActual === 'Extraída');
 
   // Handlers
   const handleCreateOrden = async (e: React.FormEvent) => {
@@ -110,32 +110,15 @@ export const Modulo2OrdenesMuestras: React.FC = () => {
 
   const handleRegistrarMuestra = async (e: React.FormEvent) => {
     e.preventDefault();
-    const now = new Date().toISOString().replace('T', ' ').substring(0, 16);
-
-    const code = newMuestraData.identificacionFisica || `TUB-${Math.floor(1000 + Math.random() * 9000)}`;
-
+    if (!ordenExtraccionId || guardandoExtraccion) return;
+    setGuardandoExtraccion(true);
     try {
-    await registrarMuestra({
-      ordenId: newMuestraData.ordenId,
-      identificacionFisica: code,
-      tipoMaterial: newMuestraData.tipoMaterial,
-      fechaHoraExtraccion: now,
-      responsableExtraccion: newMuestraData.responsableExtraccion,
-      condicionConservacion: newMuestraData.condicionConservacion,
-      observaciones: newMuestraData.observaciones
-    });
-
-    setIsExtractMuestraModalOpen(false);
-    setNewMuestraData({
-      ordenId: ordenes[0]?.id || '',
-      identificacionFisica: '',
-      tipoMaterial: 'Sangre con EDTA (Tubo lila)',
-      responsableExtraccion: 'Dra. Sofía Carrizo',
-      condicionConservacion: 'Refrigerada (2° a 8°C)',
-      observaciones: ''
-    });
+      await registrarMuestra({ ...newMuestraData, ordenId: ordenExtraccionId });
+      setOrdenExtraccionId(null);
     } catch (error) {
       showToast({ type: 'error', title: 'No se pudo registrar la muestra', description: error instanceof Error ? error.message : 'Verificá la API y los datos.' });
+    } finally {
+      setGuardandoExtraccion(false);
     }
   };
 
@@ -156,7 +139,7 @@ export const Modulo2OrdenesMuestras: React.FC = () => {
     setVincularData({
       ordenId: ord.id,
       detalleId: unlinkedDetalle ? unlinkedDetalle.id : (ord.detalles[0]?.id || ''),
-      muestraId: muestras.find((m) => m.estadoActual === 'Extraída')?.id || ''
+      muestraId: muestras.find((m) => m.ordenId === ord.id && m.estadoActual === 'Extraída')?.id || ''
     });
     setIsVincularModalOpen(true);
   };
@@ -190,14 +173,6 @@ export const Modulo2OrdenesMuestras: React.FC = () => {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setIsExtractMuestraModalOpen(true)}
-            className="px-3 py-2 text-xs font-semibold text-[#2D5864] bg-white border border-[#2D5864]/30 hover:bg-[#FAF6EF] rounded-lg transition-colors flex items-center gap-1.5"
-          >
-            <FlaskConical className="w-3.5 h-3.5" />
-            <span>Registrar Extracción de Muestra</span>
-          </button>
-
-          <button
             onClick={() => setIsNewOrdenModalOpen(true)}
             className="px-3 py-2 text-xs font-semibold text-white bg-[#2D5864] hover:bg-[#23454f] rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
           >
@@ -214,6 +189,7 @@ export const Modulo2OrdenesMuestras: React.FC = () => {
             {ordenes.map(ord => {
               const pet = mascotas.find(m => m.id === ord.mascotaId);
               const unlinkedCount = ord.detalles.filter(d => !d.muestraAsociadaId).length;
+              const muestrasDeOrden = muestras.filter(m => m.ordenId === ord.id);
 
               return (
                 <div
@@ -245,23 +221,45 @@ export const Modulo2OrdenesMuestras: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="text-xs font-mono font-medium text-neutral-600 bg-neutral-100 px-2 py-1 rounded">
                         Estado: {ord.estado}
                       </span>
-                      {unlinkedCount > 0 && (
+                      <button
+                        type="button"
+                        disabled={ord.estado === 'Cancelada'}
+                        onClick={() => {
+                          setNewMuestraData(extraccionInicial);
+                          setOrdenExtraccionId(ord.id);
+                        }}
+                        className="px-2.5 py-1 text-xs font-semibold text-[#2D5864] border border-[#2D5864]/30 rounded-md hover:bg-[#FAF6EF] disabled:opacity-50 flex items-center gap-1"
+                      >
+                        <FlaskConical className="w-3.5 h-3.5" />
+                        Registrar extracción de muestra
+                      </button>
+                      {unlinkedCount > 0 && muestrasDeOrden.some(m => m.estadoActual === 'Extraída') && (
                         <button
                           onClick={() => openVincularForOrden(ord)}
                           className="px-2.5 py-1 text-xs font-semibold text-[#5F8E9C] hover:text-[#2D5864] bg-[#FAF8F5] border border-[#F2E8D8] rounded-md transition-colors flex items-center gap-1"
                         >
                           <Link2 className="w-3.5 h-3.5" />
-                          <span>Vincular Muestra ({unlinkedCount} pendiente)</span>
+                          <span>Asignar muestra a estudio ({unlinkedCount} pendiente)</span>
                         </button>
                       )}
                     </div>
                   </div>
 
                   {/* Requested Tests & Assigned Samples */}
+                  {muestrasDeOrden.length > 0 && (
+                    <div className="text-xs text-neutral-600">
+                      <p className="font-semibold">Muestras de esta orden</p>
+                      <ul className="mt-1 space-y-1">
+                        {muestrasDeOrden.map(m => (
+                          <li key={m.id} className="break-words">{m.tipoMaterial} · <span className="font-mono">{m.identificacionFisica}</span></li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   <div className="space-y-2">
                     <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
                       Estudios Solicitados en esta Orden ({ord.detalles.length})
@@ -543,58 +541,23 @@ export const Modulo2OrdenesMuestras: React.FC = () => {
 
       {/* MODAL: REGISTRAR EXTRACCIÓN DE MUESTRA */}
       <Modal
-        isOpen={isExtractMuestraModalOpen}
-        onClose={() => setIsExtractMuestraModalOpen(false)}
+        isOpen={ordenExtraccionId !== null}
+        onClose={() => { if (!guardandoExtraccion) setOrdenExtraccionId(null); }}
         title="Registrar Extracción de Muestra Biológica"
-        subtitle="Identificación física del tubo, tipo de material y temperatura requerida"
+        subtitle={`Orden de derivación #${ordenExtraccionId}`}
         maxWidth="lg"
       >
         <form onSubmit={handleRegistrarMuestra} className="space-y-4 text-xs">
           <div>
-            <label className="block text-neutral-600 font-medium mb-1">Orden de Derivación Asociada *</label>
-            <select
-              value={newMuestraData.ordenId}
-              onChange={e => setNewMuestraData({ ...newMuestraData, ordenId: e.target.value })}
-              className="w-full p-2 bg-white border border-[#E7E2DA] rounded-lg font-mono"
-            >
-              {ordenes.map(o => {
-                const pet = mascotas.find(m => m.id === o.mascotaId);
-                return (
-                  <option key={o.id} value={o.id}>
-                    {o.id} — Paciente: {pet?.nombre} ({o.detalles.length} análisis solicitados)
-                  </option>
-                );
-              })}
-            </select>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-neutral-600 font-medium mb-1">
-                Identificación Física (Código de Tubo/Rótulo) *
-              </label>
-              <input
-                type="text"
-                value={newMuestraData.identificacionFisica}
-                onChange={e => setNewMuestraData({ ...newMuestraData, identificacionFisica: e.target.value })}
-                placeholder="Ej. TUB-EDTA-904"
-                className="w-full p-2 bg-white border border-[#E7E2DA] rounded-lg font-mono text-xs"
-              />
-              <span className="text-[10px] text-neutral-400 mt-0.5 block">
-                Si se deja vacío, se generará un código único automático.
-              </span>
-            </div>
-
-            <div>
-              <label className="block text-neutral-600 font-medium mb-1">Responsable de Extracción *</label>
-              <input
-                type="text"
-                required
-                value={newMuestraData.responsableExtraccion}
-                onChange={e => setNewMuestraData({ ...newMuestraData, responsableExtraccion: e.target.value })}
-                className="w-full p-2 bg-white border border-[#E7E2DA] rounded-lg"
-              />
-            </div>
+            <label htmlFor="responsable-extraccion" className="block text-neutral-600 font-medium mb-1">Responsable de Extracción *</label>
+            <input
+              id="responsable-extraccion"
+              type="text"
+              required
+              value={newMuestraData.responsableExtraccion}
+              onChange={e => setNewMuestraData({ ...newMuestraData, responsableExtraccion: e.target.value })}
+              className="w-full p-2 bg-white border border-[#E7E2DA] rounded-lg"
+            />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -643,16 +606,18 @@ export const Modulo2OrdenesMuestras: React.FC = () => {
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-neutral-100">
             <button
               type="button"
-              onClick={() => setIsExtractMuestraModalOpen(false)}
+              disabled={guardandoExtraccion}
+              onClick={() => setOrdenExtraccionId(null)}
               className="px-4 py-2 text-neutral-600"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="px-4 py-2 font-semibold text-white bg-[#2D5864] hover:bg-[#23454f] rounded-lg transition-colors"
+              disabled={guardandoExtraccion}
+              className="px-4 py-2 font-semibold text-white bg-[#2D5864] hover:bg-[#23454f] rounded-lg transition-colors disabled:opacity-50"
             >
-              Registrar Muestra
+              {guardandoExtraccion ? 'Registrando…' : 'Registrar muestra'}
             </button>
           </div>
         </form>
@@ -698,7 +663,7 @@ export const Modulo2OrdenesMuestras: React.FC = () => {
               onChange={e => setVincularData({ ...vincularData, muestraId: e.target.value })}
               className="w-full p-2 bg-white border border-[#E7E2DA] rounded-lg font-mono"
             >
-              {muestras.filter(m => m.estadoActual === 'Extraída').map(m => (
+              {muestrasParaVincular.map(m => (
                 <option key={m.id} value={m.id}>
                   {m.id} — {m.identificacionFisica} ({m.tipoMaterial} · {m.estadoActual})
                 </option>
@@ -716,7 +681,7 @@ export const Modulo2OrdenesMuestras: React.FC = () => {
             </button>
             <button
               type="submit"
-              disabled={!muestras.some(m => m.id === vincularData.muestraId && m.estadoActual === 'Extraída')}
+              disabled={!muestrasParaVincular.some(m => m.id === vincularData.muestraId)}
               className="px-4 py-2 font-semibold text-white bg-[#2D5864] hover:bg-[#23454f] rounded-lg transition-colors"
             >
               Confirmar Vinculación

@@ -34,6 +34,10 @@ interface ToastMessage {
   description?: string;
 }
 
+type ExtraccionMuestra = Pick<MuestraBiologica,
+  'ordenId' | 'tipoMaterial' | 'responsableExtraccion' | 'condicionConservacion' | 'observaciones'
+>;
+
 interface VeterinariaContextType {
   responsables: Responsable[];
   mascotas: Mascota[];
@@ -70,7 +74,7 @@ interface VeterinariaContextType {
   updateTurnoEstado: (id: string, nuevoEstado: EstadoTurno) => Promise<void>;
   addConsulta: (consulta: Omit<ConsultaMedica, 'id'>) => Promise<ConsultaMedica>;
   createOrden: (orden: Omit<OrdenAnalisis, 'id'>) => Promise<OrdenAnalisis>;
-  registrarMuestra: (muestra: Omit<MuestraBiologica, 'id' | 'historialTrazabilidad' | 'estadoActual'>) => Promise<MuestraBiologica>;
+  registrarMuestra: (muestra: ExtraccionMuestra) => Promise<MuestraBiologica>;
   vincularMuestraConAnalisis: (ordenId: string, detalleId: string, muestraId: string) => Promise<void>;
   prepararEnvio: (params: {
     conservadoraId: string;
@@ -230,7 +234,7 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
         ]);
         if (!activo) return;
         setResponsables(responsablesApi.map((r: any): Responsable => ({ id: String(r.id), nombreCompleto: r.full_name, documento: r.document_number, telefono: r.phone, email: r.email || '', domicilio: r.address || '', fechaAlta: '' })));
-        setMascotas(mascotasApi.map((m: any): Mascota => ({ id: String(m.id), responsableId: String(m.responsible_id), nombre: m.name, especie: m.species as Mascota['especie'], raza: m.breed || '', sexo: (m.sex || 'Hembra') as Mascota['sexo'], fechaNacimientoAprox: m.birth_date || '', pesoKg: m.weight_kg || 0, microchip: m.microchip || '', alergias: m.notes || '', fotoUrl: m.photo_url || '' })));
+        setMascotas(mascotasApi.map((m: any): Mascota => ({ id: String(m.id), responsableId: String(m.responsible_id), nombre: m.name, especie: m.species as Mascota['especie'], raza: m.breed || '', sexo: (m.sex || 'Hembra') as Mascota['sexo'], fechaNacimientoAprox: m.birth_date || '', pesoKg: m.weight_kg || 0, alergias: m.notes || '', fotoUrl: m.photo_url || '' })));
         veterinariosApiRef.current = veterinariosApi;
         setTurnos(turnosApi.map((t: any): Turno => ({ id: String(t.id), mascotaId: String(t.pet_id), responsableId: String(mascotasApi.find((m: any) => m.id === t.pet_id)?.responsible_id || ''), veterinarioId: String(t.veterinarian_id), veterinario: veterinariosApi.find((v: any) => v.id === t.veterinarian_id)?.full_name || String(t.veterinarian_id), fecha: t.scheduled_at.slice(0, 10), hora: t.scheduled_at.slice(11, 16), motivo: t.reason || '', estado: estadoTitulo(t.status) as EstadoTurno })));
         setConsultas(consultasApi.map((c: any): ConsultaMedica => ({ id: String(c.id), mascotaId: String(c.pet_id), veterinario: veterinariosApi.find((v: any) => v.id === c.veterinarian_id)?.full_name || String(c.veterinarian_id), fecha: c.attended_at.slice(0, 10), hora: c.attended_at.slice(11, 16), motivo: c.reason, evaluacionClinica: c.observations || '', diagnosticoPresuntivo: c.diagnosis || '', tratamiento: c.treatment || '', requiereAnalisis: false, turnoId: c.appointment_id ? String(c.appointment_id) : undefined })));
@@ -337,7 +341,7 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
         responsible_id: Number(data.responsableId), name: data.nombre, species: data.especie,
         breed: data.raza || null, sex: data.sexo, birth_date: data.fechaNacimientoAprox || null,
         notes: data.alergias || null, weight_kg: data.pesoKg || null,
-        microchip: data.microchip || null, photo_url: data.fotoUrl || null,
+        photo_url: data.fotoUrl || null,
       }),
     });
     if (!response.ok) throw new Error(await errorApi(response));
@@ -363,7 +367,6 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
     if (updates.sexo !== undefined) payload.sex = updates.sexo;
     if (updates.fechaNacimientoAprox !== undefined) payload.birth_date = updates.fechaNacimientoAprox || null;
     if (updates.pesoKg !== undefined) payload.weight_kg = updates.pesoKg || null;
-    if (updates.microchip !== undefined) payload.microchip = updates.microchip || null;
     if (updates.alergias !== undefined) payload.notes = updates.alergias || null;
     if (updates.fotoUrl !== undefined) payload.photo_url = updates.fotoUrl || null;
     const response = await fetch(`/api/v1/mascotas/${id}`, {
@@ -475,12 +478,10 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
     return newOrden;
   };
 
-  const registrarMuestra = async (
-    data: Omit<MuestraBiologica, 'id' | 'historialTrazabilidad' | 'estadoActual'>
-  ): Promise<MuestraBiologica> => {
+  const registrarMuestra = async (data: ExtraccionMuestra): Promise<MuestraBiologica> => {
     const tipoMuestraId = await obtenerTipoMuestraId(data.tipoMaterial);
     const saved = await api<any>('/api/v1/muestras', { method: 'POST', body: JSON.stringify({
-      codigo_etiqueta: data.identificacionFisica, orden_id: Number(data.ordenId), tipo_muestra_id: tipoMuestraId,
+      orden_id: Number(data.ordenId), tipo_muestra_id: tipoMuestraId,
       responsable_extraccion: data.responsableExtraccion, condiciones_conservacion: data.condicionConservacion,
       observaciones_calidad: data.observaciones, fecha_extraccion: new Date().toISOString(),
     }) });
@@ -494,7 +495,7 @@ export const VeterinariaProvider: React.FC<{ children: React.ReactNode }> = ({ c
     showToast({
       type: 'success',
       title: 'Muestra biológica registrada',
-      description: `Identificador ${newMuestra.id} (${data.identificacionFisica}) registrado con trazabilidad de origen.`
+      description: `Orden #${newMuestra.ordenId} · Rótulo ${newMuestra.identificacionFisica}`
     });
     return newMuestra;
   };

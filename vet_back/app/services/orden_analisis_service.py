@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.dao.muestra_dao import AsociacionMuestraDAO, MuestraDAO, TipoMuestraDAO
 from app.dao.orden_analisis_dao import OrdenAnalisisDAO
 from app.dao.tipo_analisis_dao import TipoAnalisisDAO
-from app.domain.estados_muestra import TransicionMuestraInvalida
+from app.state.estados_muestra import TransicionMuestraInvalida
 from app.models.orden_analisis import (
     AsociacionDetalleMuestra,
     DetalleOrdenAnalisis,

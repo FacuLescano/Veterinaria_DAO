@@ -76,7 +76,7 @@ async def lifespan(app: FastAPI):
             )
     pet_columns = {column["name"] for column in inspect(engine).get_columns("mascotas")}
     with engine.begin() as connection:
-        for name, sql_type in (("weight_kg", "FLOAT"), ("microchip", "VARCHAR(100)"), ("photo_url", "TEXT")):
+        for name, sql_type in (("weight_kg", "FLOAT"), ("photo_url", "TEXT")):
             if name not in pet_columns:
                 connection.execute(text(f"ALTER TABLE mascotas ADD COLUMN {name} {sql_type}"))
     inicializar_base_recepcion()

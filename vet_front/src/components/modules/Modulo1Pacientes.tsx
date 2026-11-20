@@ -80,7 +80,6 @@ export const Modulo1Pacientes: React.FC = () => {
     sexo: 'Hembra' as SexoMascota,
     fechaNacimientoAprox: '2023-01-01',
     pesoKg: 10.0,
-    microchip: '',
     alergias: '',
     fotoUrl: ''
   });
@@ -128,7 +127,6 @@ export const Modulo1Pacientes: React.FC = () => {
       m.nombre.toLowerCase().includes(search) ||
       m.raza.toLowerCase().includes(search) ||
       m.especie.toLowerCase().includes(search) ||
-      (m.microchip && m.microchip.includes(search)) ||
       (resp && resp.nombreCompleto.toLowerCase().includes(search)) ||
       (resp && resp.documento.includes(search))
     );
@@ -160,7 +158,7 @@ export const Modulo1Pacientes: React.FC = () => {
       setIsNewMascotaModalOpen(false);
       setNewMascotaData({
         nombre: '', especie: 'Canino', raza: '', sexo: 'Hembra',
-        fechaNacimientoAprox: '2023-01-01', pesoKg: 10.0, microchip: '', alergias: '', fotoUrl: ''
+        fechaNacimientoAprox: '2023-01-01', pesoKg: 10.0, alergias: '', fotoUrl: ''
       });
     } catch (error) {
       showToast({ type: 'error', title: 'No se pudo guardar la mascota', description: error instanceof Error ? error.message : 'Verificá los datos y la conexión con el backend.' });
@@ -356,7 +354,7 @@ export const Modulo1Pacientes: React.FC = () => {
               type="text"
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              placeholder="Buscar por nombre, especie, chip o responsable..."
+              placeholder="Buscar por nombre, raza, especie o responsable..."
               className="w-full pl-9 pr-4 py-2 text-xs bg-white border border-[#E7E2DA] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5864]/20 focus:border-[#2D5864] transition-all"
             />
           </div>
@@ -408,12 +406,6 @@ export const Modulo1Pacientes: React.FC = () => {
                         <span className="text-neutral-400">Peso actual:</span>
                         <span className="font-medium tabular-nums">{pet.pesoKg} kg</span>
                       </div>
-                      {pet.microchip && (
-                        <div className="flex items-center justify-between">
-                          <span className="text-neutral-400">Microchip:</span>
-                          <span className="font-mono text-[11px]">{pet.microchip}</span>
-                        </div>
-                      )}
                       <div className="flex items-center justify-between">
                         <span className="text-neutral-400">Responsable:</span>
                         <span className="font-medium text-[#2D5864] truncate max-w-[160px]">
@@ -813,17 +805,6 @@ export const Modulo1Pacientes: React.FC = () => {
                   className="w-full p-2 bg-white border border-[#E7E2DA] rounded-lg text-xs"
                 />
               </div>
-
-              <div>
-                <label className="block text-neutral-600 font-medium mb-1">Código de Microchip (Opcional)</label>
-                <input
-                  type="text"
-                  value={newMascotaData.microchip}
-                  onChange={e => setNewMascotaData({ ...newMascotaData, microchip: e.target.value })}
-                  placeholder="15 dígitos"
-                  className="w-full p-2 bg-white border border-[#E7E2DA] rounded-lg text-xs font-mono"
-                />
-              </div>
             </div>
 
             {/* Fotografía de la Mascota */}
@@ -992,16 +973,6 @@ export const Modulo1Pacientes: React.FC = () => {
                   value={editingMascota.pesoKg}
                   onChange={e => setEditingMascota({ ...editingMascota, pesoKg: parseFloat(e.target.value) || 0 })}
                   className="w-full p-2 bg-white border border-[#E7E2DA] rounded-lg text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block text-neutral-600 font-medium mb-1">Microchip (Opcional)</label>
-                <input
-                  type="text"
-                  value={editingMascota.microchip || ''}
-                  onChange={e => setEditingMascota({ ...editingMascota, microchip: e.target.value })}
-                  className="w-full p-2 bg-white border border-[#E7E2DA] rounded-lg text-xs font-mono"
                 />
               </div>
             </div>

@@ -166,6 +166,36 @@ def test_us08_registrar_extraccion_muestra_exitosa(client, datos_prueba):
     assert muestras_orden[0]["codigo_etiqueta"] == "MUESTRA-2026-001"
 
 
+def test_extracciones_generan_rotulos_y_se_guardan_en_la_orden_elegida(datos_prueba):
+    from app.schemas.orden_analisis import MuestraCreate, SolicitudAnalisisCreate
+    from app.services.orden_analisis_service import OrdenAnalisisService
+    from test.conftest import TestingSessionLocal
+
+    solicitud = SolicitudAnalisisCreate(
+        consulta_id=datos_prueba["consulta_id"],
+        detalles=[{"tipo_analisis_id": datos_prueba["tipo_analisis_id"]}],
+    )
+    with TestingSessionLocal() as db:
+        servicio = OrdenAnalisisService(db)
+        primera = servicio.solicitar_analisis(solicitud).id
+        segunda = servicio.solicitar_analisis(solicitud).id
+        rotulos = []
+        for orden_id in (segunda, primera):
+            muestra = servicio.registrar_extraccion_muestra(MuestraCreate(
+                orden_id=orden_id,
+                tipo_muestra_id=datos_prueba["tipo_muestra_id"],
+                responsable_extraccion="Dra. Lopez",
+            ))
+            rotulos.append(muestra.codigo_etiqueta)
+
+    assert all(rotulos) and rotulos[0] != rotulos[1]
+    with TestingSessionLocal() as db:
+        servicio = OrdenAnalisisService(db)
+        for orden_id, rotulo in zip((segunda, primera), rotulos):
+            muestras = servicio.listar_muestras_por_orden(orden_id)
+            assert [m.codigo_etiqueta for m in muestras] == [rotulo]
+
+
 def test_us08_muestra_codigo_duplicado_rechazado(client, datos_prueba):
     """US-08: El código de etiqueta física debe ser único (no duplicado)."""
     res_orden = client.post(
